@@ -1,0 +1,2533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Family Sudoku" />
+  <meta name="theme-color" content="#FAF7F2" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <title>Family Sudoku — Ad-Free Classic Logic Puzzles</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1"></script>
+  <style>
+    :root {
+      --bg-paper: #FAF7F2;
+      --bg-card: #FFFFFF;
+      --ink-dark: #1E293B;
+      --ink-user: #1D4ED8;
+      --ink-trail: #0D9488;
+      --ink-error: #DC2626;
+      --cell-selected: #BFDBFE;
+      --cell-peer: #F1EFEA;
+      --cell-same-digit: #DBEAFE;
+      --cell-sniper: #FEF3C7;
+      --grid-outer: #1E293B;
+      --grid-box: #475569;
+      --grid-cell: #CBD5E1;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-paper);
+      color: var(--ink-dark);
+      margin: 0;
+      padding: 0;
+      overflow-x: hidden;
+    }
+
+    /* Sudoku 9x9 Grid Styling */
+    .sudoku-board {
+      display: grid;
+      grid-template-columns: repeat(9, minmax(0, 1fr));
+      grid-template-rows: repeat(9, minmax(0, 1fr));
+      aspect-ratio: 1 / 1;
+      width: 100%;
+      max-width: 520px;
+      border: 3px solid var(--grid-outer);
+      border-radius: 12px;
+      overflow: hidden;
+      background-color: #FFFFFF;
+      box-shadow: 0 10px 25px -5px rgba(30, 41, 59, 0.08), 0 8px 10px -6px rgba(30, 41, 59, 0.04);
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .sudoku-board.trail-active-border {
+      border-color: #0D9488;
+      box-shadow: 0 0 0 4px rgba(13, 148, 136, 0.18), 0 10px 25px -5px rgba(13, 148, 136, 0.15);
+    }
+
+    .sudoku-cell {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-right: 1px solid var(--grid-cell);
+      border-bottom: 1px solid var(--grid-cell);
+      cursor: pointer;
+      transition: background-color 0.12s ease;
+      aspect-ratio: 1 / 1;
+    }
+
+    /* 3x3 Box thick borders */
+    .sudoku-cell.box-right {
+      border-right: 2.5px solid var(--grid-box);
+    }
+    .sudoku-cell.box-bottom {
+      border-bottom: 2.5px solid var(--grid-box);
+    }
+    .sudoku-cell.col-8 {
+      border-right: none;
+    }
+    .sudoku-cell.row-8 {
+      border-bottom: none;
+    }
+
+    .sudoku-cell.state-peer {
+      background-color: var(--cell-peer);
+    }
+    .sudoku-cell.state-same-digit {
+      background-color: var(--cell-same-digit);
+    }
+    .sudoku-cell.state-sniper {
+      background-color: var(--cell-sniper);
+      box-shadow: inset 0 0 0 2px #F59E0B;
+    }
+    .sudoku-cell.state-selected {
+      background-color: var(--cell-selected);
+      box-shadow: inset 0 0 0 2.5px #2563EB;
+    }
+    .sudoku-cell.state-conflict {
+      background-color: #FEE2E2;
+    }
+
+    .cell-value {
+      font-size: clamp(1.25rem, 4.2vw, 2rem);
+      line-height: 1;
+    }
+
+    .font-large .cell-value {
+      font-size: clamp(1.45rem, 4.8vw, 2.3rem);
+    }
+
+    .cell-given {
+      font-weight: 700;
+      color: var(--ink-dark);
+    }
+
+    .cell-user {
+      font-weight: 600;
+      color: var(--ink-user);
+    }
+
+    .cell-trail {
+      font-weight: 700;
+      color: var(--ink-trail);
+    }
+
+    .cell-error {
+      color: var(--ink-error) !important;
+      font-weight: 700;
+    }
+
+    .trail-dot {
+      position: absolute;
+      top: 3px;
+      right: 3px;
+      width: 6px;
+      height: 6px;
+      border-radius: 9999px;
+      background-color: #0D9488;
+    }
+
+    /* 3x3 Corner Pencil Notes Grid inside a Cell */
+    .notes-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      width: 100%;
+      height: 100%;
+      padding: 2px;
+      pointer-events: none;
+    }
+
+    .note-digit {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: clamp(0.55rem, 1.5vw, 0.78rem);
+      font-weight: 600;
+      color: #475569;
+      line-height: 1;
+    }
+
+    .note-digit.note-match {
+      color: #1D4ED8;
+      font-weight: 800;
+      background-color: #DBEAFE;
+      border-radius: 3px;
+    }
+
+    .note-digit.note-sniper-target {
+      color: #92400E;
+      font-weight: 800;
+      background-color: #FDE68A;
+      border-radius: 3px;
+      transform: scale(1.08);
+    }
+
+    /* Snyder Center Notes Overlay (Pro Dual-Tier Notation) */
+    .center-notes-badge {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      z-index: 2;
+    }
+    .center-notes-pill {
+      font-size: clamp(0.62rem, 1.7vw, 0.85rem);
+      font-weight: 800;
+      color: #6D28D9;
+      background-color: rgba(237, 233, 254, 0.92);
+      border: 1px solid #C4B5FD;
+      padding: 1px 4px;
+      border-radius: 4px;
+      letter-spacing: 0.5px;
+      line-height: 1.1;
+    }
+
+    /* Touch Number Pad */
+    .numpad-btn {
+      transition: transform 0.08s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .numpad-btn:active {
+      transform: scale(0.95);
+    }
+    .numpad-btn.locked-digit {
+      background-color: #1D4ED8 !important;
+      color: #FFFFFF !important;
+      border-color: #1E40AF !important;
+      box-shadow: 0 4px 12px rgba(29, 78, 216, 0.35);
+    }
+    .numpad-btn.digit-complete {
+      opacity: 0.38;
+    }
+
+    /* Custom Scrollbar for Modals */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #CBD5E1;
+      border-radius: 9999px;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- Top Navigation & Family Profile Bar -->
+  <header class="sticky top-0 z-30 bg-[#FAF7F2]/95 backdrop-blur border-b border-stone-200 px-3 sm:px-6 py-2.5">
+    <div class="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-2">
+      <!-- App Brand -->
+      <div class="flex items-center gap-2.5">
+        <div class="w-10 h-10 rounded-xl bg-slate-800 text-amber-50 flex items-center justify-center font-extrabold text-lg shadow-sm tracking-tight">
+          9×9
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="font-bold text-slate-800 text-base sm:text-lg leading-tight">Family Sudoku</h1>
+            <span class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
+              100% Ad-Free
+            </span>
+          </div>
+          <p class="text-xs text-slate-500 hidden sm:block">Pure logic puzzles &amp; Pro Hard Solver tools</p>
+        </div>
+      </div>
+
+      <!-- Profile Switcher Pills -->
+      <div class="flex items-center gap-1.5 bg-stone-200/75 p-1 rounded-xl" id="profileSwitcherBar">
+        <!-- Populated dynamically by renderProfiles() -->
+      </div>
+
+      <!-- View Navigation & Quick Actions -->
+      <div class="flex items-center gap-1.5">
+        <button id="navPlayBtn" type="button" class="px-3 py-2 rounded-xl text-sm font-semibold transition flex items-center gap-1.5 bg-slate-800 text-white shadow-sm">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+          <span>Board</span>
+        </button>
+        <button id="navStatsBtn" type="button" class="px-3 py-2 rounded-xl text-sm font-semibold transition flex items-center gap-1.5 bg-white text-slate-700 hover:bg-stone-100 border border-stone-200">
+          <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+          <span>Stats</span>
+        </button>
+        <button id="navSyncBtn" type="button" class="px-3 py-2 rounded-xl text-sm font-semibold transition flex items-center gap-1.5 bg-white text-slate-700 hover:bg-stone-100 border border-stone-200" title="iPad & iPhone Setup & GitHub Export">
+          <svg class="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+          <span class="hidden md:inline">iPad / Sync</span>
+        </button>
+        <button id="soundToggleBtn" type="button" class="p-2 rounded-xl bg-white text-slate-700 hover:bg-stone-100 border border-stone-200" title="Toggle gentle sound effects">
+          <span id="soundIcon">🔊</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <main class="flex-1 max-w-5xl w-full mx-auto px-3 sm:px-6 py-3.5 flex flex-col">
+
+    <!-- ==================== VIEW 1: GAME BOARD ==================== -->
+    <section id="viewPlay" class="flex-1 flex flex-col justify-center">
+      <!-- Game Status Bar: Difficulty, Daily Challenge, Purist Mode, Timer, Comfort Settings -->
+      <div class="bg-white rounded-2xl border border-stone-200/90 px-3.5 py-2.5 mb-3 shadow-sm flex flex-wrap items-center justify-between gap-2.5">
+        <!-- Difficulty Selector Pills + Daily Family Seed -->
+        <div class="flex flex-wrap items-center gap-1.5">
+          <button type="button" data-diff="easy" class="diff-btn px-3 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition bg-emerald-600 text-white shadow-sm">Easy</button>
+          <button type="button" data-diff="medium" class="diff-btn px-3 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition bg-stone-100 text-slate-700 hover:bg-stone-200">Medium</button>
+          <button type="button" data-diff="hard" class="diff-btn px-3 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition bg-stone-100 text-slate-700 hover:bg-stone-200">Hard</button>
+          <button type="button" data-diff="master" class="diff-btn px-3 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition bg-stone-100 text-slate-700 hover:bg-stone-200" title="25-clue deep logic puzzle for Dad">Master</button>
+          
+          <button id="dailyChallengeBtn" type="button" class="ml-1 px-3 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 flex items-center gap-1" title="Play today's shared family seed grid">
+            <span>📅</span>
+            <span>Daily Family Board</span>
+          </button>
+        </div>
+
+        <!-- Player Badge + Purist Crown Indicator + Mistakes + Timer -->
+        <div class="flex items-center gap-3 ml-auto">
+          <div class="hidden md:flex items-center gap-1.5 text-xs sm:text-sm font-medium text-slate-600">
+            <span id="activePlayerBadge" class="font-bold text-slate-900 px-2.5 py-1 rounded-lg bg-amber-100 text-amber-900">👩 Mom</span>
+            <span id="puristStatusPill" class="hidden px-2 py-0.5 rounded-lg bg-indigo-100 text-indigo-900 font-bold text-xs" title="Purist Mode: No error check, eligible for Crown Badge">👑 Purist</span>
+          </div>
+
+          <div class="flex items-center gap-1 text-xs sm:text-sm">
+            <span class="text-slate-400 font-medium">Mistakes:</span>
+            <span id="mistakeCounter" class="font-bold text-slate-700">0</span>
+          </div>
+
+          <!-- Timer & Pause -->
+          <div class="flex items-center gap-1.5 bg-stone-100 px-2.5 py-1.5 rounded-xl">
+            <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <span id="timerDisplay" class="font-mono font-bold text-sm sm:text-base text-slate-800 w-12 text-center">00:00</span>
+            <button id="pauseBtn" type="button" class="text-xs font-semibold px-2 py-0.5 rounded-lg bg-white text-slate-700 border border-stone-200 hover:bg-stone-50" title="Pause game">
+              Pause
+            </button>
+          </div>
+
+          <!-- Comfort Options Button -->
+          <button id="comfortSettingsBtn" type="button" class="p-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-slate-700 transition" title="Reading & Purist Settings">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Comfort & Purist Settings Collapsible Bar -->
+      <div id="comfortDrawer" class="hidden bg-amber-50/90 border border-amber-200 rounded-2xl p-3.5 mb-3 flex flex-wrap items-center justify-between gap-4 text-sm">
+        <div class="flex flex-wrap items-center gap-5">
+          <label class="inline-flex items-center gap-2 cursor-pointer font-medium text-slate-800">
+            <input type="checkbox" id="toggleLargeFont" class="w-4 h-4 rounded text-blue-600 focus:ring-blue-500" />
+            <span>Extra-Large Numbers (iPad Comfort)</span>
+          </label>
+          <label class="inline-flex items-center gap-2 cursor-pointer font-medium text-slate-800">
+            <input type="checkbox" id="toggleAutoCheck" checked class="w-4 h-4 rounded text-blue-600 focus:ring-blue-500" />
+            <span>Instant Mistake Check (Uncheck for 👑 Purist Mode)</span>
+          </label>
+          <label class="inline-flex items-center gap-2 cursor-pointer font-medium text-slate-800">
+            <input type="checkbox" id="toggleSmartHighlight" checked class="w-4 h-4 rounded text-blue-600 focus:ring-blue-500" />
+            <span>Highlight Matching Numbers &amp; Row/Box</span>
+          </label>
+        </div>
+        <button id="closeComfortBtn" type="button" class="text-xs font-bold text-amber-900 underline">Done</button>
+      </div>
+
+      <!-- Main Responsive Split: Left Board, Right Controls -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        
+        <!-- 9x9 Sudoku Grid Container -->
+        <div class="lg:col-span-7 flex flex-col items-center justify-center relative">
+          <!-- Daily Challenge / Active Trail Status Pill above board -->
+          <div id="boardTopNotice" class="hidden w-full max-w-[520px] mb-2 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center justify-between">
+            <span id="boardTopNoticeText"></span>
+            <span id="boardTopNoticeBadge" class="px-2 py-0.5 rounded-md bg-white/80 text-slate-800"></span>
+          </div>
+
+          <div id="sudokuBoard" class="sudoku-board" role="grid" aria-label="Sudoku 9 by 9 Puzzle Grid">
+            <!-- 81 Cells generated via JS -->
+          </div>
+
+          <!-- Candidate Sniper Filter Bar (Quickly spot X-Wings, Pairs & Singles in Hard puzzles) -->
+          <div class="w-full max-w-[520px] mt-3 bg-white rounded-2xl border border-stone-200 px-3 py-2 shadow-sm flex items-center justify-between gap-1.5">
+            <div class="flex items-center gap-1.5 shrink-0">
+              <span class="text-xs font-extrabold uppercase tracking-wider text-amber-800 bg-amber-100 px-2 py-1 rounded-lg" title="Highlights every square containing a specific pencil note">🎯 Note Sniper</span>
+            </div>
+            <div id="sniperDigitsBar" class="flex items-center gap-1 flex-1 justify-end">
+              <!-- Populated dynamically with Off + 1..9 buttons -->
+            </div>
+          </div>
+
+          <!-- Pause Overlay -->
+          <div id="pauseOverlay" class="hidden absolute inset-0 max-w-[520px] mx-auto rounded-xl bg-slate-900/90 backdrop-blur-sm flex flex-col items-center justify-center text-white p-6 text-center z-20">
+            <div class="w-16 h-16 rounded-2xl bg-white/10 flex items-center justify-center mb-4 text-3xl">☕</div>
+            <h3 class="text-2xl font-bold mb-1">Game Paused</h3>
+            <p class="text-slate-300 text-sm mb-6 max-w-xs">Your board is safely saved for <span id="pausedPlayerName" class="font-semibold text-amber-300">Mom</span>. Take all the time you need!</p>
+            <button id="resumeOverlayBtn" type="button" class="px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 font-bold text-base shadow-lg transition">
+              Resume Puzzle
+            </button>
+          </div>
+        </div>
+
+        <!-- Right Ergonomic Controls & Hard-Solver Power Toolkit -->
+        <div class="lg:col-span-5 flex flex-col gap-3 w-full max-w-[520px] mx-auto">
+
+          <!-- Mode Banner: Pen vs Corner Notes vs Center Notes & Input Style -->
+          <div class="bg-white rounded-2xl border border-stone-200 p-3 shadow-sm flex flex-col gap-2.5">
+            <div class="grid grid-cols-3 gap-1.5">
+              <button id="modePenBtn" type="button" class="py-2.5 px-2 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition bg-blue-600 text-white shadow-sm">
+                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+                <span>Pen (Answer)</span>
+              </button>
+              <button id="modeNotesBtn" type="button" class="py-2.5 px-2 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition bg-stone-100 text-slate-700 hover:bg-stone-200" title="Standard 3x3 Corner Pencil Notes">
+                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                <span>Pencil (Notes)</span>
+              </button>
+              <button id="modeCenterNotesBtn" type="button" class="py-2.5 px-2 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-1 transition bg-stone-100 text-slate-700 hover:bg-stone-200" title="Pro Snyder Notation: Center Pair Candidates">
+                <span>🎯</span>
+                <span>Center Pair</span>
+              </button>
+            </div>
+
+            <!-- Digit-First Lock Mode Toggle -->
+            <div class="flex items-center justify-between px-2 pt-1 border-t border-stone-100 text-xs sm:text-sm">
+              <span class="text-slate-600 font-medium">Input Method:</span>
+              <div class="flex items-center gap-1 bg-stone-100 p-1 rounded-lg">
+                <button id="inputCellFirstBtn" type="button" class="px-2.5 py-1 rounded-md font-semibold bg-white text-slate-800 shadow-sm transition">
+                  Tap Square First
+                </button>
+                <button id="inputDigitFirstBtn" type="button" class="px-2.5 py-1 rounded-md font-semibold text-slate-600 hover:text-slate-900 transition">
+                  Lock Number First
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Dad's Hard-Solver "What-If" Bookmark / Trail Checkpoint Bar -->
+          <div class="bg-teal-50/90 border border-teal-200 rounded-2xl p-3 shadow-sm">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <span class="text-base">🧭</span>
+                <div>
+                  <h4 class="text-xs font-extrabold uppercase tracking-wider text-teal-900">What-If Trail Bookmark</h4>
+                  <p id="trailStatusSubtext" class="text-[11px] text-teal-700">Test a 50/50 hypothesis in teal ink &amp; rewind anytime</p>
+                </div>
+              </div>
+              <button id="startTrailBtn" type="button" class="px-3 py-1.5 rounded-xl bg-teal-700 hover:bg-teal-600 text-white font-bold text-xs shadow-sm transition whitespace-nowrap">
+                Set Bookmark
+              </button>
+            </div>
+            <div id="activeTrailControls" class="hidden grid grid-cols-2 gap-2 mt-2.5 pt-2 border-t border-teal-200/80">
+              <button id="rewindTrailBtn" type="button" class="py-1.5 px-3 rounded-xl bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 font-bold text-xs transition">
+                ⏪ Rewind to Bookmark
+              </button>
+              <button id="commitTrailBtn" type="button" class="py-1.5 px-3 rounded-xl bg-teal-700 hover:bg-teal-600 text-white font-bold text-xs shadow-sm transition">
+                ✓ Confirm Trail Moves
+              </button>
+            </div>
+          </div>
+
+          <!-- Utility Action Row: Undo, Erase, Auto-Notes, Smart Hint -->
+          <div class="grid grid-cols-4 gap-2">
+            <button id="undoBtn" type="button" class="bg-white hover:bg-stone-50 active:bg-stone-100 border border-stone-200 rounded-xl py-2 px-2 flex flex-col items-center justify-center gap-1 shadow-sm transition">
+              <svg class="w-5 h-5 text-slate-700" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
+              <span class="text-xs font-semibold text-slate-700">Undo</span>
+            </button>
+
+            <button id="eraseBtn" type="button" class="bg-white hover:bg-stone-50 active:bg-stone-100 border border-stone-200 rounded-xl py-2 px-2 flex flex-col items-center justify-center gap-1 shadow-sm transition">
+              <svg class="w-5 h-5 text-slate-700" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+              <span class="text-xs font-semibold text-slate-700">Erase</span>
+            </button>
+
+            <button id="autoNotesBtn" type="button" class="bg-white hover:bg-stone-50 active:bg-stone-100 border border-stone-200 rounded-xl py-2 px-2 flex flex-col items-center justify-center gap-1 shadow-sm transition" title="Fill all valid pencil candidates">
+              <svg class="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+              <span class="text-xs font-semibold text-slate-700">Fill Notes</span>
+            </button>
+
+            <button id="hintBtn" type="button" class="bg-amber-50 hover:bg-amber-100 active:bg-amber-200 border border-amber-200 rounded-xl py-2 px-2 flex flex-col items-center justify-center gap-1 shadow-sm transition" title="Find Naked Singles, Hidden Singles, Naked Pairs, or Pointing Pairs">
+              <svg class="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+              <span class="text-xs font-semibold text-amber-900">Smart Hint</span>
+            </button>
+          </div>
+
+          <!-- 1-9 Touch Number Pad -->
+          <div class="grid grid-cols-3 gap-2" id="numpadGrid">
+            <!-- Populated dynamically with remaining counts -->
+          </div>
+
+          <!-- Bottom New Game & Newspaper Entry Row -->
+          <div class="grid grid-cols-2 gap-2 pt-0.5">
+            <button id="newPuzzleBtn" type="button" class="py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs sm:text-sm shadow-sm transition flex items-center justify-center gap-1.5">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+              <span>New Puzzle</span>
+            </button>
+            <button id="newspaperEntryBtn" type="button" class="py-2.5 px-3 rounded-xl bg-white hover:bg-stone-100 text-slate-700 border border-stone-200 font-bold text-xs sm:text-sm shadow-sm transition flex items-center justify-center gap-1.5" title="Type in a puzzle from a newspaper or book to solve on iPad">
+              <span>📰</span>
+              <span id="newspaperBtnLabel">Enter Paper Puzzle</span>
+            </button>
+          </div>
+
+          <!-- Smart Hint Explanation Toast -->
+          <div id="hintBanner" class="hidden bg-blue-50 border border-blue-200 text-blue-950 rounded-2xl p-3.5 text-sm shadow-sm">
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex items-center gap-2 font-bold text-blue-800 mb-1">
+                <span id="hintTechniqueBadge">💡 Logical Coaching Hint</span>
+              </div>
+              <button id="closeHintBannerBtn" type="button" class="text-xs font-bold text-blue-700 hover:underline">Dismiss</button>
+            </div>
+            <p id="hintBannerText" class="text-slate-700 leading-relaxed text-xs sm:text-sm"></p>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 2: VISUAL STATS & FAMILY PROGRESS ==================== -->
+    <section id="viewStats" class="hidden flex-1 flex flex-col gap-6 py-2">
+      <!-- Header & Level Filter -->
+      <div class="bg-white rounded-2xl border border-stone-200 p-4 sm:p-6 shadow-sm flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-center gap-3.5">
+          <div id="statsAvatarBadge" class="w-14 h-14 rounded-2xl bg-amber-100 text-amber-900 flex items-center justify-center text-2xl font-extrabold shadow-inner">
+            👩
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h2 id="statsPlayerTitle" class="text-xl sm:text-2xl font-extrabold text-slate-800">Mom's Progress Report</h2>
+              <span id="statsPlayerCodePill" class="text-xs font-mono font-bold px-2.5 py-1 rounded-lg bg-stone-100 text-slate-600 border border-stone-200">SYNC: MOM-742</span>
+            </div>
+            <p class="text-sm text-slate-500">Personal milestones, solve speed trends, and Hard-solver mastery</p>
+          </div>
+        </div>
+
+        <!-- Difficulty Filter for Stats -->
+        <div class="flex flex-wrap items-center gap-1.5 bg-stone-100 p-1.5 rounded-xl">
+          <button type="button" data-stats-diff="all" class="stats-diff-btn px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold bg-white text-slate-800 shadow-sm">All Levels</button>
+          <button type="button" data-stats-diff="easy" class="stats-diff-btn px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold text-slate-600 hover:text-slate-900">Easy</button>
+          <button type="button" data-stats-diff="medium" class="stats-diff-btn px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold text-slate-600 hover:text-slate-900">Medium</button>
+          <button type="button" data-stats-diff="hard" class="stats-diff-btn px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold text-slate-600 hover:text-slate-900">Hard</button>
+          <button type="button" data-stats-diff="master" class="stats-diff-btn px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold text-slate-600 hover:text-slate-900">Master</button>
+        </div>
+      </div>
+
+      <!-- 4 Key Metric Cards -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+        <div class="bg-white rounded-2xl border border-stone-200 p-4 shadow-sm">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Puzzles Solved</span>
+          <div class="mt-2 flex items-baseline gap-2">
+            <span id="statGamesWon" class="text-3xl font-extrabold text-slate-800">14</span>
+            <span id="statWinRate" class="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">100% Clean</span>
+          </div>
+          <p class="text-xs text-slate-500 mt-1">Completed without giving up</p>
+        </div>
+
+        <div class="bg-white rounded-2xl border border-stone-200 p-4 shadow-sm">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Daily Streak</span>
+          <div class="mt-2 flex items-baseline gap-2">
+            <span id="statCurrentStreak" class="text-3xl font-extrabold text-amber-600">5 Days</span>
+            <span class="text-xs font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full">🔥 Active</span>
+          </div>
+          <p id="statBestStreak" class="text-xs text-slate-500 mt-1">Personal record: 9 days</p>
+        </div>
+
+        <div class="bg-white rounded-2xl border border-stone-200 p-4 shadow-sm">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Fastest Time</span>
+          <div class="mt-2 flex items-baseline gap-2">
+            <span id="statBestTime" class="text-3xl font-extrabold text-blue-600">04:18</span>
+          </div>
+          <p id="statAvgTime" class="text-xs text-slate-500 mt-1">Average time: 06:12</p>
+        </div>
+
+        <div class="bg-white rounded-2xl border border-stone-200 p-4 shadow-sm">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Purist &amp; Flawless</span>
+          <div class="mt-2 flex items-baseline gap-2">
+            <span id="statFlawlessCount" class="text-3xl font-extrabold text-indigo-600">9</span>
+            <span id="statPuristCrownBadge" class="text-xs font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">👑 4 Purist</span>
+          </div>
+          <p class="text-xs text-slate-500 mt-1">Zero errors &amp; no-assist crowns</p>
+        </div>
+      </div>
+
+      <!-- Charts & Household Comparison Grid -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <!-- Solve Time Trend Chart -->
+        <div class="lg:col-span-7 bg-white rounded-2xl border border-stone-200 p-5 shadow-sm flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-3">
+              <div>
+                <h3 class="font-bold text-slate-800 text-base">Solve Speed Progression (Minutes)</h3>
+                <p class="text-xs text-slate-500">Recent completed games — watch your solve times trend downward!</p>
+              </div>
+            </div>
+            <div class="relative h-60 w-full">
+              <canvas id="solveTrendChart"></canvas>
+            </div>
+          </div>
+
+          <!-- Technique Mastery Badges (Tailored for Hard Solvers) -->
+          <div class="border-t border-stone-100 pt-4 mt-4">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2.5">Logical Techniques Mastered</h4>
+            <div id="techniqueMasteryPills" class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+              <!-- Populated dynamically -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Family Leaderboard & Level Breakdown -->
+        <div class="lg:col-span-5 bg-white rounded-2xl border border-stone-200 p-5 shadow-sm flex flex-col justify-between gap-4">
+          <div>
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-bold text-slate-800 text-base">Household Friendly Board</h3>
+              <span class="text-xs font-semibold text-slate-500">Relative Pace vs. Own Average</span>
+            </div>
+            <div id="familyLeaderboardList" class="space-y-2.5">
+              <!-- Populated dynamically -->
+            </div>
+          </div>
+
+          <!-- Level Breakdown Bars -->
+          <div class="border-t border-stone-100 pt-4">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2.5">Breakdown by Difficulty</h4>
+            <div id="difficultyBreakdownBars" class="space-y-2 text-xs">
+              <!-- Populated dynamically -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Activity Log & Demo Seed Button -->
+      <div class="bg-white rounded-2xl border border-stone-200 p-5 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <h3 class="font-bold text-slate-800 text-base">Recent Completed Puzzles</h3>
+          <button id="logSampleWinBtn" type="button" class="text-xs font-semibold px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 transition">
+            + Simulate Completed Puzzle (Test Chart)
+          </button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-sm">
+            <thead>
+              <tr class="border-b border-stone-200 text-slate-400 text-xs uppercase">
+                <th class="py-2 pr-4">Date</th>
+                <th class="py-2 px-4">Difficulty</th>
+                <th class="py-2 px-4">Solve Time</th>
+                <th class="py-2 px-4">Mistakes</th>
+                <th class="py-2 pl-4">Honor Badge</th>
+              </tr>
+            </thead>
+            <tbody id="recentGamesTableBody" class="divide-y divide-stone-100 text-slate-700">
+              <!-- Populated dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 3: IPAD PINNING, FAMILY PROFILES & GITHUB SYNC ==================== -->
+    <section id="viewSync" class="hidden flex-1 flex flex-col gap-6 py-2">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- Left: Manage Profiles & Cross-Device Sync Code -->
+        <div class="lg:col-span-6 bg-white rounded-2xl border border-stone-200 p-6 shadow-sm flex flex-col gap-5">
+          <div>
+            <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-800">Multi-Profile &amp; Cross-Device</span>
+            <h2 class="text-xl font-extrabold text-slate-800 mt-2">Family Profiles &amp; iPhone Sync</h2>
+            <p class="text-sm text-slate-600 mt-1">
+              Both parents can switch profiles in one tap on the shared iPad, or transfer their profile backup code to their personal iPhone.
+            </p>
+          </div>
+
+          <!-- Add New Family Member Form -->
+          <div class="bg-stone-50 rounded-xl p-4 border border-stone-200">
+            <label for="newProfileNameInput" class="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Add Another Player (Aunt, Uncle, Grandkid, Guest)</label>
+            <div class="flex flex-wrap sm:flex-nowrap gap-2">
+              <select id="newProfileIconSelect" class="px-3 py-2.5 rounded-xl border border-stone-300 bg-white text-base">
+                <option value="👩">👩 Mom</option>
+                <option value="👨">👨 Dad</option>
+                <option value="👵">👵 Grandma</option>
+                <option value="👴">👴 Grandpa</option>
+                <option value="🧑">🧑 Family</option>
+                <option value="🌟">🌟 Guest</option>
+              </select>
+              <input id="newProfileNameInput" type="text" maxlength="16" placeholder="Enter Name (e.g., Uncle Bob)" class="flex-1 px-3.5 py-2.5 rounded-xl border border-stone-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <button id="createProfileBtn" type="button" class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm transition whitespace-nowrap">
+                + Add Profile
+              </button>
+            </div>
+          </div>
+
+          <!-- Export / Import Sync Code Between iPad and iPhone -->
+          <div class="border-t border-stone-200 pt-4 flex flex-col gap-3">
+            <h3 class="font-bold text-slate-800 text-sm">Sync Between Shared iPad &amp; Individual iPhones</h3>
+            <p class="text-xs text-slate-500 leading-relaxed">
+              Copy your portable Family Sync Token below to move all profiles, in-progress boards, and solve history between the iPad and an iPhone—or connect a free Supabase key when hosting on GitHub Pages.
+            </p>
+            <div class="flex gap-2">
+              <button id="exportSyncBtn" type="button" class="flex-1 py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs sm:text-sm transition">
+                📋 Copy Family Sync Code
+              </button>
+              <button id="toggleImportBoxBtn" type="button" class="flex-1 py-2.5 px-3 rounded-xl bg-stone-100 hover:bg-stone-200 text-slate-800 font-bold text-xs sm:text-sm transition">
+                📥 Load Sync Code on Device
+              </button>
+            </div>
+
+            <div id="importSyncContainer" class="hidden flex-col gap-2 mt-2 bg-stone-50 p-3 rounded-xl border border-stone-200">
+              <textarea id="importSyncTextarea" rows="3" placeholder="Paste the Family Sync Code here..." class="w-full p-2.5 rounded-lg border border-stone-300 text-xs font-mono"></textarea>
+              <button id="applyImportSyncBtn" type="button" class="self-end px-4 py-2 rounded-lg bg-emerald-600 text-white font-bold text-xs">
+                Restore &amp; Merge Profiles
+              </button>
+            </div>
+
+            <div id="syncFeedbackBanner" class="hidden text-xs font-semibold px-3 py-2 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200"></div>
+          </div>
+        </div>
+
+        <!-- Right: How to Pin on iPad/iPhone & Host on GitHub Pages -->
+        <div class="lg:col-span-6 bg-white rounded-2xl border border-stone-200 p-6 shadow-sm flex flex-col gap-5">
+          <div>
+            <span class="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900">Zero Ads Forever</span>
+            <h2 class="text-xl font-extrabold text-slate-800 mt-2">Pin to iPad Home Screen &amp; GitHub Hosting</h2>
+          </div>
+
+          <div class="space-y-4 text-sm text-slate-700">
+            <div class="flex items-start gap-3 bg-stone-50 p-3.5 rounded-xl border border-stone-200/80">
+              <div class="w-7 h-7 rounded-lg bg-slate-800 text-white font-bold flex items-center justify-center shrink-0 text-xs">1</div>
+              <div>
+                <h4 class="font-bold text-slate-900">Host for Free on Your GitHub Account</h4>
+                <p class="text-xs text-slate-600 mt-0.5 leading-relaxed">
+                  Create a new GitHub repository (e.g., <code class="bg-white px-1.5 py-0.5 rounded border">family-sudoku</code>), upload this single <code class="bg-white px-1.5 py-0.5 rounded border">index.html</code> file, and enable <strong>Settings → Pages → Deploy from branch (main)</strong>. Your parents get a permanent link like <code class="bg-white px-1.5 py-0.5 rounded border">https://yourname.github.io/family-sudoku/</code>.
+                </p>
+              </div>
+            </div>
+
+            <div class="flex items-start gap-3 bg-stone-50 p-3.5 rounded-xl border border-stone-200/80">
+              <div class="w-7 h-7 rounded-lg bg-blue-600 text-white font-bold flex items-center justify-center shrink-0 text-xs">2</div>
+              <div>
+                <h4 class="font-bold text-slate-900">Pin It as an App on Their iPad &amp; iPhones</h4>
+                <p class="text-xs text-slate-600 mt-0.5 leading-relaxed">
+                  Open the link in <strong>Safari</strong> on their iPad or iPhone, tap the <strong>Share button</strong> (square with upward arrow), and tap <strong>"Add to Home Screen"</strong>. It launches full-screen like a native App Store game—with zero ads or popups.
+                </p>
+              </div>
+            </div>
+
+            <div class="flex items-start gap-3 bg-stone-50 p-3.5 rounded-xl border border-stone-200/80">
+              <div class="w-7 h-7 rounded-lg bg-emerald-600 text-white font-bold flex items-center justify-center shrink-0 text-xs">3</div>
+              <div>
+                <h4 class="font-bold text-slate-900">Complete Pro Suite for Hard Solvers</h4>
+                <p class="text-xs text-slate-600 mt-0.5 leading-relaxed">
+                  Includes <strong>Corner &amp; Center Dual-Tier Notes</strong> (Snyder notation), <strong>What-If Trail Bookmarks</strong> (test a hypothesis in teal ink and rewind with one tap), <strong>Note Sniper</strong> (highlight all cells with candidate 1–9), and <strong>Newspaper Puzzle Entry</strong>.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ==================== VICTORY CELEBRATION MODAL ==================== -->
+  <div id="winModal" class="hidden fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl max-w-md w-full p-6 sm:p-8 text-center shadow-2xl border border-stone-200">
+      <div class="w-16 h-16 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto mb-4 text-3xl">
+        🏆
+      </div>
+      <h2 class="text-2xl font-extrabold text-slate-800">Wonderful Solve!</h2>
+      <p id="winModalSubtitle" class="text-sm text-slate-500 mt-1">Recorded to Mom's stats profile</p>
+
+      <div class="grid grid-cols-3 gap-2.5 my-5 bg-stone-50 p-3.5 rounded-2xl border border-stone-200">
+        <div>
+          <span class="text-[11px] font-bold uppercase text-slate-400 block">Level</span>
+          <span id="winModalDiff" class="text-base font-extrabold text-slate-800 capitalize">Easy</span>
+        </div>
+        <div>
+          <span class="text-[11px] font-bold uppercase text-slate-400 block">Time</span>
+          <span id="winModalTime" class="text-base font-extrabold text-blue-600">04:32</span>
+        </div>
+        <div>
+          <span class="text-[11px] font-bold uppercase text-slate-400 block">Mistakes</span>
+          <span id="winModalMistakes" class="text-base font-extrabold text-emerald-700">0</span>
+        </div>
+      </div>
+
+      <div id="winPuristBanner" class="hidden mb-5 px-3.5 py-2.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-900 text-xs font-bold">
+        👑 Earned the Purist Master Crown (0 Mistakes, 0 Hints, No Auto-Check)!
+      </div>
+
+      <div class="flex flex-col sm:flex-row gap-2.5">
+        <button id="winViewStatsBtn" type="button" class="flex-1 py-3 px-4 rounded-xl bg-stone-100 hover:bg-stone-200 text-slate-800 font-bold text-sm transition">
+          View Progress Chart
+        </button>
+        <button id="winNextGameBtn" type="button" class="flex-1 py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm shadow-md transition">
+          Play Another Puzzle
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Application Script -->
+  <script>
+    (function () {
+      'use strict';
+
+      const STORAGE_KEY = 'family_sudoku_pwa_v3';
+
+      // Synthesized gentle audio feedback via Web Audio API
+      let audioCtx = null;
+      let soundEnabled = true;
+
+      function playTone(freq, durationMs, type = 'sine', gainVal = 0.05) {
+        if (!soundEnabled) return;
+        try {
+          if (!audioCtx) {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (AudioContextClass) audioCtx = new AudioContextClass();
+          }
+          if (!audioCtx) return;
+          if (audioCtx.state === 'suspended') audioCtx.resume();
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+          gain.gain.setValueAtTime(gainVal, audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + durationMs / 1000);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start();
+          osc.stop(audioCtx.currentTime + durationMs / 1000);
+        } catch (err) {
+          // Ignore audio errors on restricted devices
+        }
+      }
+
+      function playVictoryChime() {
+        const notes = [523.25, 659.25, 783.99, 1046.5];
+        notes.forEach((n, idx) => {
+          setTimeout(() => playTone(n, 220, 'triangle', 0.07), idx * 110);
+        });
+      }
+
+      // Default pre-populated realistic history for Mom & Dad
+      function createDefaultState() {
+        return {
+          activeProfileId: 'dad',
+          settings: {
+            largeFont: false,
+            autoCheck: true,
+            smartHighlight: true
+          },
+          profiles: [
+            {
+              id: 'mom',
+              name: 'Mom',
+              icon: '👩',
+              syncCode: 'MOM-742',
+              streak: 6,
+              bestStreak: 11,
+              techniques: { nakedSingles: 28, hiddenSingles: 19, nakedPairs: 7, pointingPairs: 4 },
+              savedGame: null,
+              history: [
+                { date: '2026-10-30', difficulty: 'easy', seconds: 345, mistakes: 1, purist: false },
+                { date: '2026-10-31', difficulty: 'easy', seconds: 312, mistakes: 0, purist: false },
+                { date: '2026-11-01', difficulty: 'medium', seconds: 540, mistakes: 1, purist: false },
+                { date: '2026-11-02', difficulty: 'easy', seconds: 288, mistakes: 0, purist: true },
+                { date: '2026-11-03', difficulty: 'medium', seconds: 495, mistakes: 0, purist: false },
+                { date: '2026-11-04', difficulty: 'medium', seconds: 462, mistakes: 0, purist: true },
+                { date: '2026-11-05', difficulty: 'hard', seconds: 780, mistakes: 2, purist: false },
+                { date: '2026-11-06', difficulty: 'medium', seconds: 430, mistakes: 0, purist: true },
+                { date: '2026-11-07', difficulty: 'easy', seconds: 254, mistakes: 0, purist: true },
+                { date: '2026-11-08', difficulty: 'medium', seconds: 412, mistakes: 0, purist: true }
+              ]
+            },
+            {
+              id: 'dad',
+              name: 'Dad',
+              icon: '👨',
+              syncCode: 'DAD-319',
+              streak: 7,
+              bestStreak: 14,
+              techniques: { nakedSingles: 42, hiddenSingles: 35, nakedPairs: 19, pointingPairs: 14 },
+              savedGame: null,
+              history: [
+                { date: '2026-10-31', difficulty: 'hard', seconds: 890, mistakes: 1, purist: false },
+                { date: '2026-11-01', difficulty: 'hard', seconds: 845, mistakes: 0, purist: true },
+                { date: '2026-11-02', difficulty: 'hard', seconds: 810, mistakes: 0, purist: true },
+                { date: '2026-11-04', difficulty: 'master', seconds: 980, mistakes: 1, purist: false },
+                { date: '2026-11-05', difficulty: 'hard', seconds: 760, mistakes: 0, purist: true },
+                { date: '2026-11-06', difficulty: 'hard', seconds: 725, mistakes: 0, purist: true },
+                { date: '2026-11-07', difficulty: 'master', seconds: 910, mistakes: 0, purist: true },
+                { date: '2026-11-08', difficulty: 'hard', seconds: 685, mistakes: 0, purist: true }
+              ]
+            }
+          ]
+        };
+      }
+
+      let appState = createDefaultState();
+
+      function loadState() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && Array.isArray(parsed.profiles) && parsed.profiles.length > 0) {
+              appState = parsed;
+            }
+          }
+        } catch (e) {
+          // Fallback to in-memory state
+        }
+      }
+
+      function saveState() {
+        try {
+          saveCurrentGameToProfile();
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
+        } catch (e) {
+          // Ignore storage quota issues in sandboxed views
+        }
+      }
+
+      function getActiveProfile() {
+        return appState.profiles.find(p => p.id === appState.activeProfileId) || appState.profiles[0];
+      }
+
+      // ==================== DETERMINISTIC & RANDOM SUDOKU ENGINE ====================
+      function makeRng(seedNumber) {
+        if (typeof seedNumber !== 'number') {
+          return () => Math.random();
+        }
+        let s = seedNumber >>> 0;
+        return function () {
+          s = (s * 1664525 + 1013904223) >>> 0;
+          return s / 4294967296;
+        };
+      }
+
+      function createSolvedBoard(rng = Math.random) {
+        const board = Array(81).fill(0);
+
+        function isValid(idx, num) {
+          const r = Math.floor(idx / 9);
+          const c = idx % 9;
+          const br = Math.floor(r / 3) * 3;
+          const bc = Math.floor(c / 3) * 3;
+          for (let i = 0; i < 9; i++) {
+            if (board[r * 9 + i] === num) return false;
+            if (board[i * 9 + c] === num) return false;
+          }
+          for (let dr = 0; dr < 3; dr++) {
+            for (let dc = 0; dc < 3; dc++) {
+              if (board[(br + dr) * 9 + (bc + dc)] === num) return false;
+            }
+          }
+          return true;
+        }
+
+        function fillCell(idx) {
+          if (idx >= 81) return true;
+          const digits = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+          for (let i = digits.length - 1; i > 0; i--) {
+            const j = Math.floor(rng() * (i + 1));
+            const tmp = digits[i];
+            digits[i] = digits[j];
+            digits[j] = tmp;
+          }
+          for (let d of digits) {
+            if (isValid(idx, d)) {
+              board[idx] = d;
+              if (fillCell(idx + 1)) return true;
+              board[idx] = 0;
+            }
+          }
+          return false;
+        }
+
+        fillCell(0);
+        return board;
+      }
+
+      function solveSudokuBoard(puzzleArray, limit = 2) {
+        const b = puzzleArray.slice();
+        let count = 0;
+        let firstSolution = null;
+
+        function canPlace(idx, num) {
+          const r = Math.floor(idx / 9);
+          const c = idx % 9;
+          const br = Math.floor(r / 3) * 3;
+          const bc = Math.floor(c / 3) * 3;
+          for (let i = 0; i < 9; i++) {
+            if (b[r * 9 + i] === num || b[i * 9 + c] === num) return false;
+          }
+          for (let dr = 0; dr < 3; dr++) {
+            for (let dc = 0; dc < 3; dc++) {
+              if (b[(br + dr) * 9 + (bc + dc)] === num) return false;
+            }
+          }
+          return true;
+        }
+
+        function solve() {
+          if (count >= limit) return;
+          let bestIdx = -1;
+          let bestCandidates = null;
+
+          for (let i = 0; i < 81; i++) {
+            if (b[i] === 0) {
+              const cands = [];
+              for (let d = 1; d <= 9; d++) {
+                if (canPlace(i, d)) cands.push(d);
+              }
+              if (cands.length === 0) return;
+              if (bestIdx === -1 || cands.length < bestCandidates.length) {
+                bestIdx = i;
+                bestCandidates = cands;
+                if (cands.length === 1) break;
+              }
+            }
+          }
+
+          if (bestIdx === -1) {
+            count++;
+            if (!firstSolution) firstSolution = b.slice();
+            return;
+          }
+
+          for (let d of bestCandidates) {
+            b[bestIdx] = d;
+            solve();
+            if (count >= limit) return;
+          }
+          b[bestIdx] = 0;
+        }
+
+        solve();
+        return { count, solution: firstSolution };
+      }
+
+      function generatePuzzle(difficulty, seedNumber = null) {
+        const rng = makeRng(seedNumber);
+        const solution = createSolvedBoard(rng);
+        const puzzle = solution.slice();
+
+        const targetClues = difficulty === 'easy' ? 43 : difficulty === 'medium' ? 34 : difficulty === 'hard' ? 28 : 25;
+        let clues = 81;
+
+        const indices = Array.from({ length: 81 }, (_, i) => i);
+        for (let i = indices.length - 1; i > 0; i--) {
+          const j = Math.floor(rng() * (i + 1));
+          const t = indices[i];
+          indices[i] = indices[j];
+          indices[j] = t;
+        }
+
+        for (let idx of indices) {
+          if (clues <= targetClues) break;
+          const backup = puzzle[idx];
+          puzzle[idx] = 0;
+          if (solveSudokuBoard(puzzle, 2).count !== 1) {
+            puzzle[idx] = backup;
+          } else {
+            clues--;
+          }
+        }
+
+        return { puzzle, solution };
+      }
+
+      // ==================== ACTIVE GAME STATE ====================
+      let currentGame = {
+        difficulty: 'hard',
+        isDailyChallenge: false,
+        isCustomEntry: false,
+        given: Array(81).fill(0),
+        board: Array(81).fill(0),
+        solution: Array(81).fill(0),
+        notes: Array.from({ length: 81 }, () => []),
+        centerNotes: Array.from({ length: 81 }, () => []),
+        seconds: 0,
+        mistakes: 0,
+        hintsUsed: 0,
+        selectedIdx: 40,
+        noteTier: 'pen', // 'pen' | 'corner' | 'center'
+        inputStyle: 'cell-first',
+        lockedDigit: null,
+        sniperDigit: null,
+        trailActive: false,
+        trailSnapshot: null,
+        trailCells: [],
+        isPaused: false,
+        isWon: false,
+        undoStack: []
+      };
+
+      let timerInterval = null;
+      let currentStatsDiffFilter = 'all';
+      let trendChartInstance = null;
+
+      function saveCurrentGameToProfile() {
+        const profile = getActiveProfile();
+        if (!profile || currentGame.isCustomEntry) return;
+        profile.savedGame = JSON.parse(JSON.stringify({
+          difficulty: currentGame.difficulty,
+          isDailyChallenge: currentGame.isDailyChallenge,
+          given: currentGame.given,
+          board: currentGame.board,
+          solution: currentGame.solution,
+          notes: currentGame.notes,
+          centerNotes: currentGame.centerNotes || Array.from({ length: 81 }, () => []),
+          seconds: currentGame.seconds,
+          mistakes: currentGame.mistakes,
+          hintsUsed: currentGame.hintsUsed || 0,
+          selectedIdx: currentGame.selectedIdx,
+          trailActive: currentGame.trailActive,
+          trailSnapshot: currentGame.trailSnapshot,
+          trailCells: currentGame.trailCells || [],
+          isWon: currentGame.isWon,
+          undoStack: currentGame.undoStack.slice(-25)
+        }));
+      }
+
+      function startNewPuzzle(difficulty = currentGame.difficulty, isDaily = false) {
+        let seed = null;
+        if (isDaily) {
+          const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+          seed = parseInt(today, 10) || 20261108;
+        }
+        const { puzzle, solution } = generatePuzzle(difficulty, seed);
+        currentGame = {
+          difficulty,
+          isDailyChallenge: isDaily,
+          isCustomEntry: false,
+          given: puzzle.slice(),
+          board: puzzle.slice(),
+          solution: solution.slice(),
+          notes: Array.from({ length: 81 }, () => []),
+          centerNotes: Array.from({ length: 81 }, () => []),
+          seconds: 0,
+          mistakes: 0,
+          hintsUsed: 0,
+          selectedIdx: puzzle.findIndex(v => v === 0) !== -1 ? puzzle.findIndex(v => v === 0) : 0,
+          noteTier: 'pen',
+          inputStyle: currentGame.inputStyle || 'cell-first',
+          lockedDigit: null,
+          sniperDigit: null,
+          trailActive: false,
+          trailSnapshot: null,
+          trailCells: [],
+          isPaused: false,
+          isWon: false,
+          undoStack: []
+        };
+        document.getElementById('newspaperBtnLabel').textContent = 'Enter Paper Puzzle';
+        hideHintBanner();
+        startTimer();
+        saveState();
+        renderAll();
+      }
+
+      function loadOrStartProfileGame() {
+        const profile = getActiveProfile();
+        const defaultDiff = profile && profile.id === 'dad' ? 'hard' : 'easy';
+        if (profile && profile.savedGame && !profile.savedGame.isWon && Array.isArray(profile.savedGame.board) && profile.savedGame.board.length === 81) {
+          const sg = profile.savedGame;
+          currentGame = {
+            difficulty: sg.difficulty || defaultDiff,
+            isDailyChallenge: !!sg.isDailyChallenge,
+            isCustomEntry: false,
+            given: sg.given,
+            board: sg.board,
+            solution: sg.solution,
+            notes: sg.notes || Array.from({ length: 81 }, () => []),
+            centerNotes: sg.centerNotes || Array.from({ length: 81 }, () => []),
+            seconds: sg.seconds || 0,
+            mistakes: sg.mistakes || 0,
+            hintsUsed: sg.hintsUsed || 0,
+            selectedIdx: typeof sg.selectedIdx === 'number' ? sg.selectedIdx : 0,
+            noteTier: 'pen',
+            inputStyle: currentGame.inputStyle || 'cell-first',
+            lockedDigit: null,
+            sniperDigit: null,
+            trailActive: !!sg.trailActive,
+            trailSnapshot: sg.trailSnapshot || null,
+            trailCells: sg.trailCells || [],
+            isPaused: false,
+            isWon: false,
+            undoStack: sg.undoStack || []
+          };
+          hideHintBanner();
+          startTimer();
+          renderAll();
+        } else {
+          startNewPuzzle(defaultDiff, false);
+        }
+      }
+
+      function startTimer() {
+        if (timerInterval) clearInterval(timerInterval);
+        timerInterval = setInterval(() => {
+          if (!currentGame.isPaused && !currentGame.isWon && !currentGame.isCustomEntry) {
+            currentGame.seconds++;
+            updateTimerUI();
+          }
+        }, 1000);
+      }
+
+      function formatTime(totalSec) {
+        const m = Math.floor(totalSec / 60);
+        const s = totalSec % 60;
+        return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+      }
+
+      function updateTimerUI() {
+        const el = document.getElementById('timerDisplay');
+        if (el) el.textContent = formatTime(currentGame.seconds);
+      }
+
+      // ==================== GAMEPLAY & TRAIL BOOKMARK LOGIC ====================
+      function pushUndoSnapshot() {
+        currentGame.undoStack.push({
+          board: currentGame.board.slice(),
+          notes: currentGame.notes.map(n => n.slice()),
+          centerNotes: (currentGame.centerNotes || Array.from({ length: 81 }, () => [])).map(n => n.slice()),
+          trailCells: (currentGame.trailCells || []).slice()
+        });
+        if (currentGame.undoStack.length > 40) currentGame.undoStack.shift();
+      }
+
+      function arePeers(idx1, idx2) {
+        if (idx1 === idx2) return false;
+        const r1 = Math.floor(idx1 / 9), c1 = idx1 % 9;
+        const r2 = Math.floor(idx2 / 9), c2 = idx2 % 9;
+        if (r1 === r2 || c1 === c2) return true;
+        if (Math.floor(r1 / 3) === Math.floor(r2 / 3) && Math.floor(c1 / 3) === Math.floor(c2 / 3)) return true;
+        return false;
+      }
+
+      function hasRowColBoxConflict(idx, val, boardRef = currentGame.board) {
+        if (!val) return false;
+        for (let i = 0; i < 81; i++) {
+          if (i !== idx && boardRef[i] === val && arePeers(idx, i)) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      function isCellWrong(idx) {
+        const val = currentGame.board[idx];
+        if (!val || currentGame.given[idx] !== 0) return false;
+        if (currentGame.isCustomEntry) {
+          return hasRowColBoxConflict(idx, val);
+        }
+        if (appState.settings.autoCheck) {
+          return val !== currentGame.solution[idx];
+        }
+        return hasRowColBoxConflict(idx, val);
+      }
+
+      function applyDigitToCell(idx, digit) {
+        if (currentGame.isPaused || currentGame.isWon) return;
+        if (idx === null || idx < 0 || idx >= 81) return;
+
+        // Newspaper Custom Entry mode
+        if (currentGame.isCustomEntry) {
+          if (currentGame.board[idx] === digit) {
+            currentGame.board[idx] = 0;
+            currentGame.given[idx] = 0;
+          } else {
+            if (hasRowColBoxConflict(idx, digit)) {
+              playTone(210, 140, 'sawtooth', 0.04);
+              showHintBanner('Conflict Warning', `Digit ${digit} already exists in that row, column, or 3×3 box.`);
+              return;
+            }
+            currentGame.board[idx] = digit;
+            currentGame.given[idx] = digit;
+            playTone(520, 60, 'sine', 0.04);
+          }
+          renderBoard();
+          renderNumpad();
+          return;
+        }
+
+        if (currentGame.given[idx] !== 0) return;
+
+        pushUndoSnapshot();
+
+        if (currentGame.noteTier === 'corner') {
+          if (currentGame.board[idx] !== 0) {
+            currentGame.board[idx] = 0;
+          }
+          const notesArr = currentGame.notes[idx];
+          const pos = notesArr.indexOf(digit);
+          if (pos === -1) {
+            notesArr.push(digit);
+            notesArr.sort((a, b) => a - b);
+          } else {
+            notesArr.splice(pos, 1);
+          }
+          if (currentGame.trailActive && !currentGame.trailCells.includes(idx)) {
+            currentGame.trailCells.push(idx);
+          }
+          playTone(440, 55, 'sine', 0.03);
+        } else if (currentGame.noteTier === 'center') {
+          if (currentGame.board[idx] !== 0) {
+            currentGame.board[idx] = 0;
+          }
+          if (!currentGame.centerNotes[idx]) currentGame.centerNotes[idx] = [];
+          const cArr = currentGame.centerNotes[idx];
+          const pos = cArr.indexOf(digit);
+          if (pos === -1) {
+            cArr.push(digit);
+            cArr.sort((a, b) => a - b);
+          } else {
+            cArr.splice(pos, 1);
+          }
+          if (currentGame.trailActive && !currentGame.trailCells.includes(idx)) {
+            currentGame.trailCells.push(idx);
+          }
+          playTone(490, 55, 'sine', 0.03);
+        } else {
+          // Pen Mode
+          if (currentGame.board[idx] === digit) {
+            currentGame.board[idx] = 0;
+            currentGame.trailCells = currentGame.trailCells.filter(c => c !== idx);
+            playTone(320, 60, 'sine', 0.03);
+          } else {
+            currentGame.board[idx] = digit;
+            currentGame.notes[idx] = [];
+            currentGame.centerNotes[idx] = [];
+            if (currentGame.trailActive && !currentGame.trailCells.includes(idx)) {
+              currentGame.trailCells.push(idx);
+            }
+
+            if (digit !== currentGame.solution[idx]) {
+              currentGame.mistakes++;
+              playTone(210, 180, 'sawtooth', 0.04);
+            } else {
+              playTone(587.33, 75, 'sine', 0.05);
+              for (let i = 0; i < 81; i++) {
+                if (arePeers(idx, i)) {
+                  const pNotes = currentGame.notes[i];
+                  const nIdx = pNotes.indexOf(digit);
+                  if (nIdx !== -1) pNotes.splice(nIdx, 1);
+
+                  const cNotes = currentGame.centerNotes[i] || [];
+                  const cIdx = cNotes.indexOf(digit);
+                  if (cIdx !== -1) cNotes.splice(cIdx, 1);
+                }
+              }
+            }
+          }
+        }
+
+        checkWinCondition();
+        saveState();
+        renderBoard();
+        renderNumpad();
+        renderSniperBar();
+        renderStatusHeader();
+      }
+
+      // What-If Trail Bookmark Controls
+      function startTrailBookmark() {
+        if (currentGame.isPaused || currentGame.isWon || currentGame.isCustomEntry) return;
+        currentGame.trailActive = true;
+        currentGame.trailSnapshot = {
+          board: currentGame.board.slice(),
+          notes: currentGame.notes.map(n => n.slice()),
+          centerNotes: (currentGame.centerNotes || Array.from({ length: 81 }, () => [])).map(n => n.slice())
+        };
+        currentGame.trailCells = [];
+        playTone(540, 80, 'triangle', 0.05);
+        saveState();
+        renderAll();
+      }
+
+      function rewindToBookmark() {
+        if (!currentGame.trailActive || !currentGame.trailSnapshot) return;
+        pushUndoSnapshot();
+        currentGame.board = currentGame.trailSnapshot.board.slice();
+        currentGame.notes = currentGame.trailSnapshot.notes.map(n => n.slice());
+        currentGame.centerNotes = (currentGame.trailSnapshot.centerNotes || Array.from({ length: 81 }, () => [])).map(n => n.slice());
+        currentGame.trailActive = false;
+        currentGame.trailSnapshot = null;
+        currentGame.trailCells = [];
+        playTone(340, 110, 'sine', 0.05);
+        saveState();
+        renderAll();
+      }
+
+      function commitTrailBookmark() {
+        if (!currentGame.trailActive) return;
+        currentGame.trailActive = false;
+        currentGame.trailSnapshot = null;
+        currentGame.trailCells = [];
+        playTone(660, 90, 'triangle', 0.05);
+        saveState();
+        renderAll();
+      }
+
+      // Newspaper Custom Puzzle Entry Mode
+      function toggleNewspaperEntryMode() {
+        if (!currentGame.isCustomEntry) {
+          currentGame.isCustomEntry = true;
+          currentGame.isDailyChallenge = false;
+          currentGame.given = Array(81).fill(0);
+          currentGame.board = Array(81).fill(0);
+          currentGame.solution = Array(81).fill(0);
+          currentGame.notes = Array.from({ length: 81 }, () => []);
+          currentGame.centerNotes = Array.from({ length: 81 }, () => []);
+          currentGame.seconds = 0;
+          currentGame.mistakes = 0;
+          currentGame.trailActive = false;
+          currentGame.trailCells = [];
+          currentGame.noteTier = 'pen';
+          document.getElementById('newspaperBtnLabel').textContent = '✓ Lock & Solve Paper Grid';
+          showHintBanner('Newspaper Puzzle Entry Mode', 'Tap squares and enter the starting numbers from your newspaper or book. When finished, tap "✓ Lock & Solve Paper Grid" to verify and begin solving!');
+          renderAll();
+        } else {
+          const clueCount = currentGame.given.filter(v => v !== 0).length;
+          if (clueCount < 15) {
+            showHintBanner('Need More Clues', `You have entered ${clueCount} numbers so far. Please enter at least 15 starting clues from your paper puzzle (or tap "New Puzzle" to cancel).`);
+            return;
+          }
+          const res = solveSudokuBoard(currentGame.given, 2);
+          if (res.count === 0 || !res.solution) {
+            showHintBanner('No Valid Solution Found', 'Those starting numbers have a contradiction and cannot be solved. Please double-check your entered digits!');
+            return;
+          }
+          currentGame.solution = res.solution;
+          currentGame.isCustomEntry = false;
+          currentGame.seconds = 0;
+          currentGame.mistakes = 0;
+          document.getElementById('newspaperBtnLabel').textContent = 'Enter Paper Puzzle';
+          showHintBanner(
+            res.count === 1 ? 'Paper Puzzle Verified!' : 'Paper Puzzle Loaded',
+            res.count === 1
+              ? 'Unique solution confirmed! Your timer has started—enjoy solving with full pencil notes and bookmarks.'
+              : 'Puzzle loaded! (Note: This grid has more than one valid solution, so play in Purist mode).'
+          );
+          startTimer();
+          saveState();
+          renderAll();
+        }
+      }
+
+      function checkWinCondition() {
+        if (currentGame.isCustomEntry) return false;
+        for (let i = 0; i < 81; i++) {
+          if (currentGame.board[i] !== currentGame.solution[i]) return false;
+        }
+        currentGame.isWon = true;
+        currentGame.trailActive = false;
+        currentGame.trailCells = [];
+        playVictoryChime();
+
+        const isPuristCrown = !appState.settings.autoCheck && currentGame.mistakes === 0 && (currentGame.hintsUsed || 0) === 0;
+
+        const profile = getActiveProfile();
+        const todayStr = new Date().toISOString().slice(0, 10);
+        profile.history.push({
+          date: todayStr,
+          difficulty: currentGame.difficulty,
+          seconds: currentGame.seconds,
+          mistakes: currentGame.mistakes,
+          purist: isPuristCrown
+        });
+        profile.streak = (profile.streak || 0) + 1;
+        if (profile.streak > (profile.bestStreak || 0)) {
+          profile.bestStreak = profile.streak;
+        }
+        profile.savedGame = null;
+        saveState();
+
+        document.getElementById('winModalSubtitle').textContent = `Recorded to ${profile.name}'s profile (${profile.syncCode})`;
+        document.getElementById('winModalDiff').textContent = currentGame.difficulty;
+        document.getElementById('winModalTime').textContent = formatTime(currentGame.seconds);
+        document.getElementById('winModalMistakes').textContent = String(currentGame.mistakes);
+        const puristBanner = document.getElementById('winPuristBanner');
+        if (isPuristCrown) {
+          puristBanner.classList.remove('hidden');
+        } else {
+          puristBanner.classList.add('hidden');
+        }
+        document.getElementById('winModal').classList.remove('hidden');
+        return true;
+      }
+
+      function handleErase() {
+        if (currentGame.isPaused || currentGame.isWon) return;
+        const idx = currentGame.selectedIdx;
+        if (idx === null) return;
+        if (currentGame.isCustomEntry) {
+          currentGame.board[idx] = 0;
+          currentGame.given[idx] = 0;
+          renderBoard();
+          renderNumpad();
+          return;
+        }
+        if (currentGame.given[idx] !== 0) return;
+        const hasCNotes = currentGame.centerNotes && currentGame.centerNotes[idx] && currentGame.centerNotes[idx].length > 0;
+        if (currentGame.board[idx] === 0 && currentGame.notes[idx].length === 0 && !hasCNotes) return;
+
+        pushUndoSnapshot();
+        currentGame.board[idx] = 0;
+        currentGame.notes[idx] = [];
+        if (currentGame.centerNotes) currentGame.centerNotes[idx] = [];
+        currentGame.trailCells = currentGame.trailCells.filter(c => c !== idx);
+        playTone(300, 60, 'sine', 0.03);
+        saveState();
+        renderBoard();
+        renderNumpad();
+        renderSniperBar();
+      }
+
+      function handleUndo() {
+        if (currentGame.isPaused || currentGame.isWon) return;
+        if (currentGame.undoStack.length === 0) return;
+        const prev = currentGame.undoStack.pop();
+        currentGame.board = prev.board;
+        currentGame.notes = prev.notes;
+        currentGame.centerNotes = prev.centerNotes || Array.from({ length: 81 }, () => []);
+        currentGame.trailCells = prev.trailCells || [];
+        playTone(380, 65, 'sine', 0.04);
+        saveState();
+        renderBoard();
+        renderNumpad();
+        renderSniperBar();
+      }
+
+      function computeCandidateList(idx) {
+        if (currentGame.board[idx] !== 0) return [];
+        const cands = [];
+        for (let d = 1; d <= 9; d++) {
+          if (!hasRowColBoxConflict(idx, d)) cands.push(d);
+        }
+        return cands;
+      }
+
+      function handleAutoNotes() {
+        if (currentGame.isPaused || currentGame.isWon || currentGame.isCustomEntry) return;
+        pushUndoSnapshot();
+        for (let i = 0; i < 81; i++) {
+          const cands = computeCandidateList(i);
+          currentGame.notes[i] = cands;
+          // Also auto-highlight 2-candidate bivalue cells in Center Notes for Snyder fans
+          if (cands.length === 2) {
+            currentGame.centerNotes[i] = cands.slice();
+          } else {
+            currentGame.centerNotes[i] = [];
+          }
+        }
+        playTone(620, 90, 'sine', 0.04);
+        saveState();
+        renderBoard();
+        renderSniperBar();
+      }
+
+      // ==================== TECHNIQUE-NAMED LOGIC COACH (FOR HARD SOLVERS) ====================
+      function handleSmartHint() {
+        if (currentGame.isPaused || currentGame.isWon || currentGame.isCustomEntry) return;
+        currentGame.hintsUsed = (currentGame.hintsUsed || 0) + 1;
+        const profile = getActiveProfile();
+        if (!profile.techniques) {
+          profile.techniques = { nakedSingles: 10, hiddenSingles: 8, nakedPairs: 4, pointingPairs: 2 };
+        }
+
+        for (let i = 0; i < 81; i++) {
+          if (currentGame.board[i] !== 0 && currentGame.board[i] !== currentGame.solution[i]) {
+            currentGame.selectedIdx = i;
+            const r = Math.floor(i / 9) + 1;
+            const c = (i % 9) + 1;
+            showHintBanner('💡 Contradiction Spotted', `Row ${r}, Column ${c} currently has ${currentGame.board[i]}, which conflicts with the puzzle's unique solution. Erase it to get back on track!`);
+            renderBoard();
+            return;
+          }
+        }
+
+        const allCands = Array.from({ length: 81 }, (_, i) => computeCandidateList(i));
+
+        // Naked Single
+        for (let i = 0; i < 81; i++) {
+          if (currentGame.board[i] === 0 && allCands[i].length === 1) {
+            const ans = allCands[i][0];
+            currentGame.selectedIdx = i;
+            pushUndoSnapshot();
+            currentGame.board[i] = ans;
+            currentGame.notes[i] = [];
+            currentGame.centerNotes[i] = [];
+            profile.techniques.nakedSingles = (profile.techniques.nakedSingles || 0) + 1;
+            const r = Math.floor(i / 9) + 1;
+            const c = (i % 9) + 1;
+            showHintBanner('🎯 Technique: Naked Single', `At Row ${r}, Column ${c}, every other digit (1–9) is already seen in its row, column, or 3×3 block—leaving ${ans} as the sole possible candidate!`);
+            playTone(680, 110, 'triangle', 0.05);
+            checkWinCondition();
+            saveState();
+            renderAll();
+            return;
+          }
+        }
+
+        // Hidden Single
+        const units = [];
+        for (let r = 0; r < 9; r++) {
+          units.push({ name: `Row ${r + 1}`, cells: Array.from({ length: 9 }, (_, c) => r * 9 + c) });
+        }
+        for (let c = 0; c < 9; c++) {
+          units.push({ name: `Column ${c + 1}`, cells: Array.from({ length: 9 }, (_, r) => r * 9 + c) });
+        }
+        for (let br = 0; br < 3; br++) {
+          for (let bc = 0; bc < 3; bc++) {
+            const cells = [];
+            for (let dr = 0; dr < 3; dr++) {
+              for (let dc = 0; dc < 3; dc++) {
+                cells.push((br * 3 + dr) * 9 + (bc * 3 + dc));
+              }
+            }
+            units.push({ name: `Box (${br + 1},${bc + 1})`, cells });
+          }
+        }
+
+        for (let u of units) {
+          for (let d = 1; d <= 9; d++) {
+            const spots = u.cells.filter(idx => currentGame.board[idx] === 0 && allCands[idx].includes(d));
+            if (spots.length === 1) {
+              const target = spots[0];
+              currentGame.selectedIdx = target;
+              pushUndoSnapshot();
+              currentGame.board[target] = d;
+              currentGame.notes[target] = [];
+              currentGame.centerNotes[target] = [];
+              profile.techniques.hiddenSingles = (profile.techniques.hiddenSingles || 0) + 1;
+              const r = Math.floor(target / 9) + 1;
+              const c = (target % 9) + 1;
+              showHintBanner('🔍 Technique: Hidden Single', `Scan ${u.name} for the number ${d}: Row ${r}, Column ${c} is the only square in ${u.name} where ${d} can legally go!`);
+              playTone(680, 110, 'triangle', 0.05);
+              checkWinCondition();
+              saveState();
+              renderAll();
+              return;
+            }
+          }
+        }
+
+        // Naked Pair
+        for (let u of units) {
+          const twoCandCells = u.cells.filter(idx => currentGame.board[idx] === 0 && allCands[idx].length === 2);
+          for (let a = 0; a < twoCandCells.length; a++) {
+            for (let b = a + 1; b < twoCandCells.length; b++) {
+              const idx1 = twoCandCells[a];
+              const idx2 = twoCandCells[b];
+              if (allCands[idx1][0] === allCands[idx2][0] && allCands[idx1][1] === allCands[idx2][1]) {
+                const d1 = allCands[idx1][0];
+                const d2 = allCands[idx1][1];
+                handleAutoNotes();
+                currentGame.selectedIdx = idx1;
+                currentGame.sniperDigit = d1;
+                profile.techniques.nakedPairs = (profile.techniques.nakedPairs || 0) + 1;
+                showHintBanner(
+                  '🧠 Advanced Technique: Naked Pair',
+                  `In ${u.name}, two squares are restricted to the exact same pair {${d1}, ${d2}}. That locks ${d1} and ${d2} into those two squares, so you can eliminate ${d1} and ${d2} from all other pencil notes in ${u.name}!`
+                );
+                saveState();
+                renderAll();
+                return;
+              }
+            }
+          }
+        }
+
+        // Fallback: Pointing Pair / Box-Line Reduction
+        let target = currentGame.selectedIdx;
+        if (target === null || currentGame.board[target] !== 0) {
+          target = currentGame.board.findIndex(v => v === 0);
+        }
+        if (target !== -1) {
+          const ans = currentGame.solution[target];
+          currentGame.selectedIdx = target;
+          pushUndoSnapshot();
+          currentGame.board[target] = ans;
+          currentGame.notes[target] = [];
+          currentGame.centerNotes[target] = [];
+          profile.techniques.pointingPairs = (profile.techniques.pointingPairs || 0) + 1;
+          const r = Math.floor(target / 9) + 1;
+          const c = (target % 9) + 1;
+          showHintBanner('⚡ Technique: Box-Line Intersection', `By cross-eliminating pointing candidates along Row ${r} and Column ${c}, ${ans} is forced into Row ${r}, Column ${c}.`);
+          playTone(680, 110, 'triangle', 0.05);
+          checkWinCondition();
+          saveState();
+          renderAll();
+        }
+      }
+
+      function showHintBanner(title, msg) {
+        const banner = document.getElementById('hintBanner');
+        const badge = document.getElementById('hintTechniqueBadge');
+        const text = document.getElementById('hintBannerText');
+        if (banner && text) {
+          if (badge) badge.textContent = title || '💡 Logical Coaching Hint';
+          text.textContent = msg;
+          banner.classList.remove('hidden');
+        }
+      }
+
+      function hideHintBanner() {
+        const banner = document.getElementById('hintBanner');
+        if (banner) banner.classList.add('hidden');
+      }
+
+      // ==================== UI RENDERING ====================
+      function renderProfiles() {
+        const container = document.getElementById('profileSwitcherBar');
+        if (!container) return;
+        container.innerHTML = '';
+
+        appState.profiles.forEach(profile => {
+          const isActive = profile.id === appState.activeProfileId;
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = isActive
+            ? 'px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold bg-white text-slate-900 shadow-sm flex items-center gap-1.5 transition'
+            : 'px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold text-slate-600 hover:text-slate-900 flex items-center gap-1.5 transition';
+          btn.innerHTML = `<span>${profile.icon}</span><span>${profile.name}</span>`;
+          btn.addEventListener('click', () => {
+            if (profile.id === appState.activeProfileId) return;
+            saveCurrentGameToProfile();
+            appState.activeProfileId = profile.id;
+            loadOrStartProfileGame();
+            saveState();
+            renderAll();
+          });
+          container.appendChild(btn);
+        });
+
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.title = 'Add or Sync Family Profile';
+        addBtn.className = 'px-2.5 py-1.5 rounded-lg text-xs font-bold text-slate-500 hover:text-slate-900 hover:bg-white/60 transition';
+        addBtn.textContent = '+ Family';
+        addBtn.addEventListener('click', () => switchMainView('sync'));
+        container.appendChild(addBtn);
+      }
+
+      function renderStatusHeader() {
+        const profile = getActiveProfile();
+        const badge = document.getElementById('activePlayerBadge');
+        if (badge && profile) {
+          badge.textContent = `${profile.icon} ${profile.name}`;
+        }
+        const puristPill = document.getElementById('puristStatusPill');
+        if (puristPill) {
+          if (!appState.settings.autoCheck) {
+            puristPill.classList.remove('hidden');
+          } else {
+            puristPill.classList.add('hidden');
+          }
+        }
+        const pausedName = document.getElementById('pausedPlayerName');
+        if (pausedName && profile) {
+          pausedName.textContent = profile.name;
+        }
+        const mistakeEl = document.getElementById('mistakeCounter');
+        if (mistakeEl) {
+          mistakeEl.textContent = String(currentGame.mistakes);
+        }
+
+        document.querySelectorAll('.diff-btn').forEach(btn => {
+          const d = btn.getAttribute('data-diff');
+          if (d === currentGame.difficulty && !currentGame.isDailyChallenge) {
+            btn.className = 'diff-btn px-3 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition bg-emerald-600 text-white shadow-sm';
+          } else {
+            btn.className = 'diff-btn px-3 py-1.5 rounded-xl text-xs sm:text-sm font-bold transition bg-stone-100 text-slate-700 hover:bg-stone-200';
+          }
+        });
+
+        const noticeEl = document.getElementById('boardTopNotice');
+        const noticeText = document.getElementById('boardTopNoticeText');
+        const noticeBadge = document.getElementById('boardTopNoticeBadge');
+        if (noticeEl && noticeText && noticeBadge) {
+          if (currentGame.isCustomEntry) {
+            noticeEl.className = 'w-full max-w-[520px] mb-2 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center justify-between bg-amber-100 text-amber-950 border border-amber-300';
+            noticeText.textContent = '📰 Newspaper Entry Mode: Enter starting digits from paper';
+            noticeBadge.textContent = `${currentGame.given.filter(v => v !== 0).length} clues set`;
+          } else if (currentGame.trailActive) {
+            noticeEl.className = 'w-full max-w-[520px] mb-2 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center justify-between bg-teal-100 text-teal-950 border border-teal-300';
+            noticeText.textContent = '🧭 What-If Trail Active: Trial moves are marked in teal';
+            noticeBadge.textContent = `${currentGame.trailCells.length} trial steps`;
+          } else if (currentGame.isDailyChallenge) {
+            noticeEl.className = 'w-full max-w-[520px] mb-2 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center justify-between bg-indigo-100 text-indigo-950 border border-indigo-200';
+            noticeText.textContent = `📅 Today's Shared Family Challenge (${currentGame.difficulty.toUpperCase()})`;
+            noticeBadge.textContent = new Date().toISOString().slice(0, 10);
+          } else {
+            noticeEl.className = 'hidden';
+          }
+        }
+
+        const startTrailBtn = document.getElementById('startTrailBtn');
+        const activeTrailControls = document.getElementById('activeTrailControls');
+        const trailSubtext = document.getElementById('trailStatusSubtext');
+        if (startTrailBtn && activeTrailControls && trailSubtext) {
+          if (currentGame.trailActive) {
+            startTrailBtn.classList.add('hidden');
+            activeTrailControls.classList.remove('hidden');
+            trailSubtext.textContent = `Bookmark saved! Testing ${currentGame.trailCells.length} move(s) in teal ink.`;
+          } else {
+            startTrailBtn.classList.remove('hidden');
+            activeTrailControls.classList.add('hidden');
+            trailSubtext.textContent = 'Test a 50/50 hypothesis in teal ink & rewind anytime';
+          }
+        }
+
+        // 3-Tier Mode Toggles: Pen vs Corner Notes vs Center Pair Notes
+        const penBtn = document.getElementById('modePenBtn');
+        const notesBtn = document.getElementById('modeNotesBtn');
+        const centerBtn = document.getElementById('modeCenterNotesBtn');
+        if (penBtn && notesBtn && centerBtn) {
+          const inactiveCls = 'py-2.5 px-2 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition bg-stone-100 text-slate-700 hover:bg-stone-200';
+          penBtn.className = currentGame.noteTier === 'pen'
+            ? 'py-2.5 px-2 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition bg-blue-600 text-white shadow-sm'
+            : inactiveCls;
+          notesBtn.className = currentGame.noteTier === 'corner'
+            ? 'py-2.5 px-2 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition bg-amber-600 text-white shadow-sm'
+            : inactiveCls;
+          centerBtn.className = currentGame.noteTier === 'center'
+            ? 'py-2.5 px-2 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-1 transition bg-purple-600 text-white shadow-sm'
+            : inactiveCls;
+        }
+
+        const cellFirstBtn = document.getElementById('inputCellFirstBtn');
+        const digitFirstBtn = document.getElementById('inputDigitFirstBtn');
+        if (cellFirstBtn && digitFirstBtn) {
+          if (currentGame.inputStyle === 'cell-first') {
+            cellFirstBtn.className = 'px-2.5 py-1 rounded-md font-semibold bg-white text-slate-800 shadow-sm transition';
+            digitFirstBtn.className = 'px-2.5 py-1 rounded-md font-semibold text-slate-600 hover:text-slate-900 transition';
+          } else {
+            cellFirstBtn.className = 'px-2.5 py-1 rounded-md font-semibold text-slate-600 hover:text-slate-900 transition';
+            digitFirstBtn.className = 'px-2.5 py-1 rounded-md font-semibold bg-blue-600 text-white shadow-sm transition';
+          }
+        }
+      }
+
+      function renderSniperBar() {
+        const bar = document.getElementById('sniperDigitsBar');
+        if (!bar) return;
+        bar.innerHTML = '';
+
+        const offBtn = document.createElement('button');
+        offBtn.type = 'button';
+        offBtn.className = currentGame.sniperDigit === null
+          ? 'px-2 py-1 rounded-lg text-xs font-bold bg-slate-800 text-white'
+          : 'px-2 py-1 rounded-lg text-xs font-semibold text-slate-500 hover:bg-stone-100';
+        offBtn.textContent = 'Off';
+        offBtn.addEventListener('click', () => {
+          currentGame.sniperDigit = null;
+          renderSniperBar();
+          renderBoard();
+        });
+        bar.appendChild(offBtn);
+
+        for (let d = 1; d <= 9; d++) {
+          const active = currentGame.sniperDigit === d;
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = active
+            ? 'w-7 h-7 rounded-lg text-xs font-extrabold bg-amber-500 text-white shadow-sm'
+            : 'w-7 h-7 rounded-lg text-xs font-bold text-slate-700 bg-stone-100 hover:bg-amber-100';
+          b.textContent = String(d);
+          b.addEventListener('click', () => {
+            currentGame.sniperDigit = currentGame.sniperDigit === d ? null : d;
+            playTone(500, 40, 'sine', 0.03);
+            renderSniperBar();
+            renderBoard();
+          });
+          bar.appendChild(b);
+        }
+      }
+
+      function renderBoard() {
+        const boardEl = document.getElementById('sudokuBoard');
+        if (!boardEl) return;
+
+        if (appState.settings.largeFont) {
+          boardEl.classList.add('font-large');
+        } else {
+          boardEl.classList.remove('font-large');
+        }
+
+        if (currentGame.trailActive) {
+          boardEl.classList.add('trail-active-border');
+        } else {
+          boardEl.classList.remove('trail-active-border');
+        }
+
+        boardEl.innerHTML = '';
+
+        const selIdx = currentGame.selectedIdx;
+        const selectedVal = selIdx !== null ? currentGame.board[selIdx] : 0;
+        const activeMatchDigit = currentGame.sniperDigit
+          ? currentGame.sniperDigit
+          : (currentGame.inputStyle === 'digit-first' && currentGame.lockedDigit ? currentGame.lockedDigit : selectedVal);
+
+        for (let i = 0; i < 81; i++) {
+          const r = Math.floor(i / 9);
+          const c = i % 9;
+          const val = currentGame.board[i];
+          const isGiven = currentGame.given[i] !== 0;
+          const isTrailCell = currentGame.trailCells && currentGame.trailCells.includes(i);
+          const cornerNotes = currentGame.notes[i] || [];
+          const centerNotes = (currentGame.centerNotes && currentGame.centerNotes[i]) ? currentGame.centerNotes[i] : [];
+          const hasSniperNote = currentGame.sniperDigit !== null && val === 0 && (
+            cornerNotes.includes(currentGame.sniperDigit) || centerNotes.includes(currentGame.sniperDigit)
+          );
+
+          const cell = document.createElement('div');
+          const classes = ['sudoku-cell', `row-${r}`, `col-${c}`];
+          if (c === 2 || c === 5) classes.push('box-right');
+          if (r === 2 || r === 5) classes.push('box-bottom');
+
+          const isError = isCellWrong(i);
+
+          if (i === selIdx) {
+            classes.push('state-selected');
+          } else if (isError) {
+            classes.push('state-conflict');
+          } else if (hasSniperNote) {
+            classes.push('state-sniper');
+          } else if (appState.settings.smartHighlight) {
+            if (activeMatchDigit !== 0 && val === activeMatchDigit) {
+              classes.push('state-same-digit');
+            } else if (selIdx !== null && arePeers(selIdx, i)) {
+              classes.push('state-peer');
+            }
+          }
+
+          cell.className = classes.join(' ');
+
+          if (isTrailCell) {
+            const dot = document.createElement('span');
+            dot.className = 'trail-dot';
+            cell.appendChild(dot);
+          }
+
+          if (val !== 0) {
+            const span = document.createElement('span');
+            const colorClass = isGiven ? 'cell-given' : (isTrailCell ? 'cell-trail' : 'cell-user');
+            span.className = 'cell-value ' + colorClass + (isError ? ' cell-error' : '');
+            span.textContent = String(val);
+            cell.appendChild(span);
+          } else {
+            if (cornerNotes.length > 0) {
+              const notesGrid = document.createElement('div');
+              notesGrid.className = 'notes-grid';
+              for (let d = 1; d <= 9; d++) {
+                const nd = document.createElement('div');
+                const hasNote = cornerNotes.includes(d);
+                let noteCls = 'note-digit';
+                if (hasNote && currentGame.sniperDigit === d) {
+                  noteCls += ' note-sniper-target';
+                } else if (hasNote && appState.settings.smartHighlight && d === activeMatchDigit) {
+                  noteCls += ' note-match';
+                }
+                nd.className = noteCls;
+                nd.textContent = hasNote ? String(d) : '';
+                notesGrid.appendChild(nd);
+              }
+              cell.appendChild(notesGrid);
+            }
+            if (centerNotes.length > 0) {
+              const cWrap = document.createElement('div');
+              cWrap.className = 'center-notes-badge';
+              const cPill = document.createElement('span');
+              cPill.className = 'center-notes-pill';
+              cPill.textContent = centerNotes.join('');
+              cWrap.appendChild(cPill);
+              cell.appendChild(cWrap);
+            }
+          }
+
+          cell.addEventListener('click', () => {
+            currentGame.selectedIdx = i;
+            if (currentGame.inputStyle === 'digit-first' && currentGame.lockedDigit !== null) {
+              if (currentGame.isCustomEntry || currentGame.given[i] === 0) {
+                applyDigitToCell(i, currentGame.lockedDigit);
+                return;
+              }
+            }
+            renderBoard();
+          });
+
+          boardEl.appendChild(cell);
+        }
+      }
+
+      function renderNumpad() {
+        const container = document.getElementById('numpadGrid');
+        if (!container) return;
+        container.innerHTML = '';
+
+        const counts = Array(10).fill(0);
+        for (let i = 0; i < 81; i++) {
+          const v = currentGame.board[i];
+          if (v >= 1 && v <= 9 && !isCellWrong(i)) {
+            counts[v]++;
+          }
+        }
+
+        for (let d = 1; d <= 9; d++) {
+          const remaining = Math.max(0, 9 - counts[d]);
+          const isLocked = currentGame.inputStyle === 'digit-first' && currentGame.lockedDigit === d;
+          const isComplete = remaining === 0 && !currentGame.isCustomEntry;
+
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = [
+            'numpad-btn bg-white hover:bg-blue-50 border border-stone-200 rounded-2xl py-2.5 px-2 flex flex-col items-center justify-center shadow-sm',
+            isLocked ? 'locked-digit' : '',
+            isComplete ? 'digit-complete' : ''
+          ].join(' ');
+
+          btn.innerHTML = `
+            <span class="text-2xl font-extrabold text-slate-800 ${isLocked ? '!text-white' : ''}">${d}</span>
+            <span class="text-[11px] font-semibold text-slate-400 ${isLocked ? '!text-blue-100' : ''}">${remaining} left</span>
+          `;
+
+          btn.addEventListener('click', () => {
+            if (currentGame.inputStyle === 'digit-first') {
+              currentGame.lockedDigit = currentGame.lockedDigit === d ? null : d;
+              playTone(480, 45, 'sine', 0.03);
+              renderBoard();
+              renderNumpad();
+            } else {
+              applyDigitToCell(currentGame.selectedIdx, d);
+            }
+          });
+
+          container.appendChild(btn);
+        }
+      }
+
+      // ==================== STATS & CHART RENDERING ====================
+      function renderStatsView() {
+        const profile = getActiveProfile();
+        if (!profile) return;
+
+        document.getElementById('statsAvatarBadge').textContent = profile.icon;
+        document.getElementById('statsPlayerTitle').textContent = `${profile.name}'s Progress Report`;
+        document.getElementById('statsPlayerCodePill').textContent = `SYNC: ${profile.syncCode}`;
+
+        const allHistory = profile.history || [];
+        const filtered = currentStatsDiffFilter === 'all'
+          ? allHistory
+          : allHistory.filter(h => h.difficulty === currentStatsDiffFilter);
+
+        const gamesWon = filtered.length;
+        const flawless = filtered.filter(h => (h.mistakes || 0) === 0).length;
+        const puristCount = filtered.filter(h => h.purist).length;
+        const bestSec = gamesWon > 0 ? Math.min(...filtered.map(h => h.seconds)) : 0;
+        const avgSec = gamesWon > 0 ? Math.round(filtered.reduce((acc, h) => acc + h.seconds, 0) / gamesWon) : 0;
+
+        document.getElementById('statGamesWon').textContent = String(gamesWon);
+        document.getElementById('statCurrentStreak').textContent = `${profile.streak || 1} Days`;
+        document.getElementById('statBestStreak').textContent = `Personal record: ${profile.bestStreak || profile.streak || 1} days`;
+        document.getElementById('statBestTime').textContent = gamesWon > 0 ? formatTime(bestSec) : '--:--';
+        document.getElementById('statAvgTime').textContent = gamesWon > 0 ? `Average time: ${formatTime(avgSec)}` : 'Play a game to record';
+        document.getElementById('statFlawlessCount').textContent = String(flawless);
+        document.getElementById('statPuristCrownBadge').textContent = `👑 ${puristCount} Purist`;
+
+        document.querySelectorAll('.stats-diff-btn').forEach(btn => {
+          const d = btn.getAttribute('data-stats-diff');
+          if (d === currentStatsDiffFilter) {
+            btn.className = 'stats-diff-btn px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold bg-white text-slate-800 shadow-sm';
+          } else {
+            btn.className = 'stats-diff-btn px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold text-slate-600 hover:text-slate-900';
+          }
+        });
+
+        renderSolveTrendChart(filtered);
+
+        // Technique Mastery Pills
+        const techEl = document.getElementById('techniqueMasteryPills');
+        if (techEl) {
+          const t = profile.techniques || { nakedSingles: 15, hiddenSingles: 12, nakedPairs: 5, pointingPairs: 3 };
+          const items = [
+            { name: 'Naked Singles', val: t.nakedSingles || 0, bg: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
+            { name: 'Hidden Singles', val: t.hiddenSingles || 0, bg: 'bg-blue-50 text-blue-800 border-blue-200' },
+            { name: 'Naked Pairs', val: t.nakedPairs || 0, bg: 'bg-indigo-50 text-indigo-800 border-indigo-200' },
+            { name: 'Pointing Pairs', val: t.pointingPairs || 0, bg: 'bg-amber-50 text-amber-900 border-amber-200' }
+          ];
+          techEl.innerHTML = items.map(item => `
+            <div class="p-2.5 rounded-xl border ${item.bg} flex flex-col justify-between">
+              <span class="font-semibold text-[11px] opacity-80">${item.name}</span>
+              <span class="text-lg font-extrabold mt-0.5">${item.val}</span>
+            </div>
+          `).join('');
+        }
+
+        // Render Family Friendly Leaderboard
+        const lbContainer = document.getElementById('familyLeaderboardList');
+        if (lbContainer) {
+          lbContainer.innerHTML = '';
+          const sortedProfiles = appState.profiles.slice().sort((a, b) => (b.history?.length || 0) - (a.history?.length || 0));
+          sortedProfiles.forEach((p, idx) => {
+            const pHist = p.history || [];
+            const totalSolved = pHist.length;
+            const puristSolved = pHist.filter(g => g.purist).length;
+            const hardSolved = pHist.filter(g => g.difficulty === 'hard' || g.difficulty === 'master').length;
+            const row = document.createElement('div');
+            row.className = 'flex items-center justify-between p-3 rounded-xl border ' +
+              (p.id === profile.id ? 'bg-amber-50/70 border-amber-200' : 'bg-stone-50 border-stone-200/70');
+            row.innerHTML = `
+              <div class="flex items-center gap-3">
+                <span class="text-xl">${p.icon}</span>
+                <div>
+                  <div class="font-bold text-sm text-slate-800">${p.name} ${idx === 0 ? '🏆' : ''}</div>
+                  <div class="text-xs text-slate-500">🔥 ${p.streak || 1}d streak • 👑 ${puristSolved} Purist • ${hardSolved} Hard+</div>
+                </div>
+              </div>
+              <div class="text-right">
+                <span class="text-base font-extrabold text-slate-800">${totalSolved}</span>
+                <span class="block text-[11px] font-semibold text-slate-400">Solved</span>
+              </div>
+            `;
+            lbContainer.appendChild(row);
+          });
+        }
+
+        // Render Difficulty Breakdown Bars
+        const barsContainer = document.getElementById('difficultyBreakdownBars');
+        if (barsContainer) {
+          const total = Math.max(1, allHistory.length);
+          const easyCount = allHistory.filter(h => h.difficulty === 'easy').length;
+          const medCount = allHistory.filter(h => h.difficulty === 'medium').length;
+          const hardCount = allHistory.filter(h => h.difficulty === 'hard').length;
+          const masterCount = allHistory.filter(h => h.difficulty === 'master').length;
+
+          const levels = [
+            { label: 'Easy', count: easyCount, color: 'bg-emerald-500' },
+            { label: 'Medium', count: medCount, color: 'bg-blue-600' },
+            { label: 'Hard', count: hardCount, color: 'bg-amber-600' },
+            { label: 'Master (25 Clues)', count: masterCount, color: 'bg-purple-600' }
+          ];
+
+          barsContainer.innerHTML = levels.map(l => {
+            const pct = Math.round((l.count / total) * 100);
+            return `
+              <div>
+                <div class="flex justify-between font-semibold text-slate-700 mb-1">
+                  <span>${l.label}</span>
+                  <span>${l.count} puzzles (${pct}%)</span>
+                </div>
+                <div class="w-full h-2 bg-stone-100 rounded-full overflow-hidden">
+                  <div class="${l.color} h-full rounded-full" style="width: ${pct}%"></div>
+                </div>
+              </div>
+            `;
+          }).join('');
+        }
+
+        // Render Recent Games Table
+        const tbody = document.getElementById('recentGamesTableBody');
+        if (tbody) {
+          const recent = filtered.slice().reverse().slice(0, 8);
+          tbody.innerHTML = recent.map(g => {
+            let badge = '<span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-stone-100 text-slate-600">✓ Completed</span>';
+            if (g.purist) {
+              badge = '<span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-800 border border-indigo-200">👑 Purist Crown</span>';
+            } else if (g.mistakes === 0) {
+              badge = '<span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700">⭐ Flawless</span>';
+            }
+            return `
+              <tr>
+                <td class="py-2.5 pr-4 font-medium">${g.date}</td>
+                <td class="py-2.5 px-4 capitalize font-semibold">${g.difficulty}</td>
+                <td class="py-2.5 px-4 font-mono font-bold text-blue-700">${formatTime(g.seconds)}</td>
+                <td class="py-2.5 px-4">${g.mistakes}</td>
+                <td class="py-2.5 pl-4">${badge}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+      }
+
+      function renderSolveTrendChart(historyItems) {
+        const canvas = document.getElementById('solveTrendChart');
+        if (!canvas || typeof Chart === 'undefined') return;
+
+        if (trendChartInstance) {
+          trendChartInstance.destroy();
+          trendChartInstance = null;
+        }
+
+        const recent = historyItems.slice(-12);
+        const labels = recent.map((item, i) => `#${i + 1} (${item.difficulty[0].toUpperCase()})`);
+        const dataMinutes = recent.map(item => +(item.seconds / 60).toFixed(2));
+
+        trendChartInstance = new Chart(canvas.getContext('2d'), {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [{
+              label: 'Solve Time (Minutes)',
+              data: dataMinutes,
+              borderColor: '#2563EB',
+              backgroundColor: 'rgba(37, 99, 235, 0.12)',
+              borderWidth: 3,
+              pointBackgroundColor: '#1D4ED8',
+              pointRadius: 4,
+              fill: true,
+              tension: 0.32
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false }
+            },
+            scales: {
+              y: {
+                beginAtZero: false,
+                title: { display: true, text: 'Minutes' },
+                grid: { color: '#F1F5F9' }
+              },
+              x: {
+                grid: { display: false }
+              }
+            }
+          }
+        });
+      }
+
+      function renderAll() {
+        renderProfiles();
+        renderStatusHeader();
+        renderSniperBar();
+        renderBoard();
+        renderNumpad();
+        updateTimerUI();
+      }
+
+      // ==================== VIEW NAVIGATION ====================
+      function switchMainView(viewName) {
+        const playSec = document.getElementById('viewPlay');
+        const statsSec = document.getElementById('viewStats');
+        const syncSec = document.getElementById('viewSync');
+
+        const playBtn = document.getElementById('navPlayBtn');
+        const statsBtn = document.getElementById('navStatsBtn');
+        const syncBtn = document.getElementById('navSyncBtn');
+
+        playSec.classList.add('hidden');
+        statsSec.classList.add('hidden');
+        syncSec.classList.add('hidden');
+
+        const inactiveClass = 'px-3 py-2 rounded-xl text-sm font-semibold transition flex items-center gap-1.5 bg-white text-slate-700 hover:bg-stone-100 border border-stone-200';
+        const activeClass = 'px-3 py-2 rounded-xl text-sm font-semibold transition flex items-center gap-1.5 bg-slate-800 text-white shadow-sm';
+
+        playBtn.className = inactiveClass;
+        statsBtn.className = inactiveClass;
+        syncBtn.className = inactiveClass;
+
+        if (viewName === 'play') {
+          playSec.classList.remove('hidden');
+          playBtn.className = activeClass;
+        } else if (viewName === 'stats') {
+          statsSec.classList.remove('hidden');
+          statsBtn.className = activeClass;
+          renderStatsView();
+        } else if (viewName === 'sync') {
+          syncSec.classList.remove('hidden');
+          syncBtn.className = activeClass;
+        }
+      }
+
+      // ==================== EVENT LISTENERS ====================
+      function bindEvents() {
+        document.getElementById('navPlayBtn').addEventListener('click', () => switchMainView('play'));
+        document.getElementById('navStatsBtn').addEventListener('click', () => switchMainView('stats'));
+        document.getElementById('navSyncBtn').addEventListener('click', () => switchMainView('sync'));
+
+        document.getElementById('soundToggleBtn').addEventListener('click', () => {
+          soundEnabled = !soundEnabled;
+          document.getElementById('soundIcon').textContent = soundEnabled ? '🔊' : '🔇';
+          if (soundEnabled) playTone(520, 60);
+        });
+
+        document.querySelectorAll('.diff-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const diff = btn.getAttribute('data-diff');
+            startNewPuzzle(diff, false);
+          });
+        });
+
+        document.getElementById('dailyChallengeBtn').addEventListener('click', () => {
+          startNewPuzzle(currentGame.difficulty, true);
+        });
+
+        document.getElementById('startTrailBtn').addEventListener('click', startTrailBookmark);
+        document.getElementById('rewindTrailBtn').addEventListener('click', rewindToBookmark);
+        document.getElementById('commitTrailBtn').addEventListener('click', commitTrailBookmark);
+
+        document.getElementById('newspaperEntryBtn').addEventListener('click', toggleNewspaperEntryMode);
+
+        function togglePause() {
+          if (currentGame.isWon) return;
+          currentGame.isPaused = !currentGame.isPaused;
+          const overlay = document.getElementById('pauseOverlay');
+          const pauseBtn = document.getElementById('pauseBtn');
+          if (currentGame.isPaused) {
+            overlay.classList.remove('hidden');
+            pauseBtn.textContent = 'Resume';
+          } else {
+            overlay.classList.add('hidden');
+            pauseBtn.textContent = 'Pause';
+          }
+        }
+
+        document.getElementById('pauseBtn').addEventListener('click', togglePause);
+        document.getElementById('resumeOverlayBtn').addEventListener('click', togglePause);
+
+        const comfortDrawer = document.getElementById('comfortDrawer');
+        document.getElementById('comfortSettingsBtn').addEventListener('click', () => {
+          comfortDrawer.classList.toggle('hidden');
+        });
+        document.getElementById('closeComfortBtn').addEventListener('click', () => {
+          comfortDrawer.classList.add('hidden');
+        });
+
+        document.getElementById('toggleLargeFont').addEventListener('change', (e) => {
+          appState.settings.largeFont = e.target.checked;
+          saveState();
+          renderBoard();
+        });
+        document.getElementById('toggleAutoCheck').addEventListener('change', (e) => {
+          appState.settings.autoCheck = e.target.checked;
+          saveState();
+          renderStatusHeader();
+          renderBoard();
+          renderNumpad();
+        });
+        document.getElementById('toggleSmartHighlight').addEventListener('change', (e) => {
+          appState.settings.smartHighlight = e.target.checked;
+          saveState();
+          renderBoard();
+        });
+
+        // 3-Tier Mode Toggles: Pen vs Corner Notes vs Center Pair Notes
+        document.getElementById('modePenBtn').addEventListener('click', () => {
+          currentGame.noteTier = 'pen';
+          renderStatusHeader();
+        });
+        document.getElementById('modeNotesBtn').addEventListener('click', () => {
+          currentGame.noteTier = 'corner';
+          renderStatusHeader();
+        });
+        document.getElementById('modeCenterNotesBtn').addEventListener('click', () => {
+          currentGame.noteTier = 'center';
+          renderStatusHeader();
+        });
+
+        document.getElementById('inputCellFirstBtn').addEventListener('click', () => {
+          currentGame.inputStyle = 'cell-first';
+          currentGame.lockedDigit = null;
+          renderStatusHeader();
+          renderBoard();
+          renderNumpad();
+        });
+        document.getElementById('inputDigitFirstBtn').addEventListener('click', () => {
+          currentGame.inputStyle = 'digit-first';
+          if (!currentGame.lockedDigit) currentGame.lockedDigit = 1;
+          renderStatusHeader();
+          renderBoard();
+          renderNumpad();
+        });
+
+        document.getElementById('undoBtn').addEventListener('click', handleUndo);
+        document.getElementById('eraseBtn').addEventListener('click', handleErase);
+        document.getElementById('autoNotesBtn').addEventListener('click', handleAutoNotes);
+        document.getElementById('hintBtn').addEventListener('click', handleSmartHint);
+        document.getElementById('closeHintBannerBtn').addEventListener('click', hideHintBanner);
+        document.getElementById('newPuzzleBtn').addEventListener('click', () => startNewPuzzle(currentGame.difficulty, false));
+
+        window.addEventListener('keydown', (e) => {
+          if (document.getElementById('viewPlay').classList.contains('hidden')) return;
+          if (currentGame.isPaused || currentGame.isWon) return;
+
+          if (e.key >= '1' && e.key <= '9') {
+            const d = parseInt(e.key, 10);
+            applyDigitToCell(currentGame.selectedIdx, d);
+          } else if (e.key === 'Backspace' || e.key === 'Delete') {
+            handleErase();
+          } else if (e.key === 'n' || e.key === 'N') {
+            currentGame.noteTier = currentGame.noteTier === 'pen' ? 'corner' : (currentGame.noteTier === 'corner' ? 'center' : 'pen');
+            renderStatusHeader();
+          } else if (e.key === 'b' || e.key === 'B') {
+            if (!currentGame.trailActive) startTrailBookmark();
+          } else if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+            e.preventDefault();
+            let r = Math.floor(currentGame.selectedIdx / 9);
+            let c = currentGame.selectedIdx % 9;
+            if (e.key === 'ArrowUp') r = (r + 8) % 9;
+            if (e.key === 'ArrowDown') r = (r + 1) % 9;
+            if (e.key === 'ArrowLeft') c = (c + 8) % 9;
+            if (e.key === 'ArrowRight') c = (c + 1) % 9;
+            currentGame.selectedIdx = r * 9 + c;
+            renderBoard();
+          }
+        });
+
+        document.querySelectorAll('.stats-diff-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            currentStatsDiffFilter = btn.getAttribute('data-stats-diff');
+            renderStatsView();
+          });
+        });
+
+        document.getElementById('logSampleWinBtn').addEventListener('click', () => {
+          const profile = getActiveProfile();
+          const diff = currentStatsDiffFilter === 'all' ? 'hard' : currentStatsDiffFilter;
+          const baseSec = diff === 'easy' ? 230 : diff === 'medium' ? 410 : diff === 'hard' ? 660 : 820;
+          const randomSec = baseSec + Math.floor(Math.random() * 90) - 45;
+          const isClean = Math.random() > 0.25;
+          profile.history.push({
+            date: new Date().toISOString().slice(0, 10),
+            difficulty: diff,
+            seconds: Math.max(120, randomSec),
+            mistakes: isClean ? 0 : 1,
+            purist: isClean
+          });
+          profile.streak = (profile.streak || 1) + 1;
+          if (profile.streak > (profile.bestStreak || 0)) profile.bestStreak = profile.streak;
+          saveState();
+          renderStatsView();
+          playTone(659.25, 90);
+        });
+
+        document.getElementById('winViewStatsBtn').addEventListener('click', () => {
+          document.getElementById('winModal').classList.add('hidden');
+          switchMainView('stats');
+        });
+        document.getElementById('winNextGameBtn').addEventListener('click', () => {
+          document.getElementById('winModal').classList.add('hidden');
+          startNewPuzzle(currentGame.difficulty, false);
+        });
+
+        document.getElementById('createProfileBtn').addEventListener('click', () => {
+          const nameInput = document.getElementById('newProfileNameInput');
+          const iconSelect = document.getElementById('newProfileIconSelect');
+          const rawName = (nameInput.value || '').trim();
+          if (!rawName) return;
+
+          const id = 'p_' + Date.now();
+          const codePrefix = rawName.replace(/[^a-zA-Z]/g, '').slice(0, 3).toUpperCase() || 'FAM';
+          const syncCode = `${codePrefix}-${Math.floor(100 + Math.random() * 900)}`;
+
+          appState.profiles.push({
+            id,
+            name: rawName,
+            icon: iconSelect.value || '🧑',
+            syncCode,
+            streak: 1,
+            bestStreak: 1,
+            techniques: { nakedSingles: 5, hiddenSingles: 3, nakedPairs: 1, pointingPairs: 1 },
+            savedGame: null,
+            history: [
+              { date: new Date().toISOString().slice(0, 10), difficulty: 'easy', seconds: 310, mistakes: 0, purist: true }
+            ]
+          });
+
+          nameInput.value = '';
+          appState.activeProfileId = id;
+          loadOrStartProfileGame();
+          saveState();
+          renderAll();
+          showSyncFeedback(`Added ${rawName} (${syncCode}) and switched to their profile!`);
+        });
+
+        document.getElementById('exportSyncBtn').addEventListener('click', () => {
+          saveCurrentGameToProfile();
+          const token = btoa(unescape(encodeURIComponent(JSON.stringify(appState))));
+          let copied = false;
+          try {
+            const tempInput = document.createElement('textarea');
+            tempInput.value = token;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            copied = document.execCommand('copy');
+            document.body.removeChild(tempInput);
+          } catch (e) {
+            copied = false;
+          }
+          const importBox = document.getElementById('importSyncContainer');
+          const textarea = document.getElementById('importSyncTextarea');
+          importBox.classList.remove('hidden');
+          importBox.classList.add('flex');
+          textarea.value = token;
+          showSyncFeedback(copied
+            ? 'Copied Family Sync Code to clipboard! Paste it on your iPhone or iPad to sync.'
+            : 'Generated Family Sync Code below — copy and paste it onto your other device.');
+        });
+
+        document.getElementById('toggleImportBoxBtn').addEventListener('click', () => {
+          const importBox = document.getElementById('importSyncContainer');
+          importBox.classList.toggle('hidden');
+          importBox.classList.toggle('flex');
+        });
+
+        document.getElementById('applyImportSyncBtn').addEventListener('click', () => {
+          const raw = (document.getElementById('importSyncTextarea').value || '').trim();
+          if (!raw) return;
+          try {
+            const decoded = JSON.parse(decodeURIComponent(escape(atob(raw))));
+            if (decoded && Array.isArray(decoded.profiles)) {
+              appState = decoded;
+              saveState();
+              loadOrStartProfileGame();
+              renderAll();
+              showSyncFeedback('Profiles, streaks, and in-progress boards synced!');
+            }
+          } catch (e) {
+            showSyncFeedback('Invalid Sync Code format. Please copy the full code from the other device.');
+          }
+        });
+      }
+
+      function showSyncFeedback(msg) {
+        const el = document.getElementById('syncFeedbackBanner');
+        if (!el) return;
+        el.textContent = msg;
+        el.classList.remove('hidden');
+      }
+
+      window.addEventListener('DOMContentLoaded', () => {
+        loadState();
+        document.getElementById('toggleLargeFont').checked = !!appState.settings.largeFont;
+        document.getElementById('toggleAutoCheck').checked = appState.settings.autoCheck !== false;
+        document.getElementById('toggleSmartHighlight').checked = appState.settings.smartHighlight !== false;
+        bindEvents();
+        loadOrStartProfileGame();
+      });
+    })();
+  </script>
+</body>
+</html>
