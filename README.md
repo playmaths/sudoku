@@ -1,6 +1,6 @@
 # Family Sudoku
 
-A single-file, ad-free classic Sudoku for a shared family iPad and everyone's phones. Play it at **https://gauravparikh.github.io/family-sudoku/**, or open `index.html` in any browser. On a phone or tablet use *Add to Home Screen*: the web manifest and service worker make it an installed app with its own icon that works offline.
+A single-file, ad-free classic Sudoku for a shared family iPad and everyone's phones. Play it at **https://playmaths.github.io/sudoku/**, or open `index.html` in any browser. On a phone or tablet use *Add to Home Screen*: the web manifest and service worker make it an installed app with its own icon that works offline.
 
 ## What it does
 
