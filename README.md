@@ -4,10 +4,10 @@ A single-file, ad-free classic Sudoku for a shared family iPad and everyone's ph
 
 ## What it does
 
-- **Four difficulties** generated on the device, each with a unique solution and graded by the techniques it actually needs rather than by clue count: Easy and Medium are solvable with singles alone, Hard needs pairs, pointing pairs or box-line reductions, and Master needs something beyond those (an X-Wing, a chain). A **Daily Family Board** gives every player the same puzzle on a given day.
+- **Four difficulties** generated on the device, each with a unique solution and graded by the techniques it actually needs rather than by clue count: Easy and Medium are solvable with singles alone, Hard needs pairs, triples, pointing pairs or box-line reductions, and Master needs an X-Wing, Swordfish or Y-Wing but nothing the coach cannot explain. A **Daily Family Board** gives every player the same puzzle on a given day.
 - **Pro notation**: pen, corner pencil notes and Snyder-style center notes, with auto-notes and a digit "sniper" highlight.
 - **What-If Trail**: bookmark the board, try a hypothesis in teal ink, then rewind or commit.
-- **Technique coach**: each hint is the next real logical step on the board, named for its technique (naked and hidden singles, naked and hidden pairs, pointing pairs, box-line reduction). Placement hints fill one cell, elimination hints remove only the pencil marks the logic rules out, and when the position needs a technique the coach does not know it says so and reveals one cell.
+- **Technique coach**: each hint is the next real logical step on the board, named for its technique (naked and hidden singles, naked and hidden pairs and triples, pointing pairs, box-line reduction, X-Wing, Swordfish, Y-Wing). Placement hints fill one cell, elimination hints remove only the pencil marks the logic rules out, and in the rare position that needs a technique the coach does not know it says so and reveals one cell.
 - **Newspaper entry**: type in a puzzle from a paper or book; the app checks it is solvable and plays it like any other board. A grid with several valid answers is accepted too and judged on clashes only.
 - **Family profiles** with per-player history, daily streaks and a stats page, saved in the device's browser. A sync code copies everything to another device.
 - **Comfort settings**: large digits, optional auto error check (turn it off for a "Purist" solve, where nothing on screen gives a wrong digit away) and smart highlighting.
