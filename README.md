@@ -22,6 +22,10 @@ A single-file, ad-free classic Sudoku for a shared family iPad and everyone's ph
 - **Optional pencil-note slip check** for players who want their bookkeeping policed, haptic taps where the device supports them, keyboard and screen-reader labels on the board.
 - **Honest timer**: counts wall-clock time while the board is on screen, pauses when the app is in the background, and survives a reload.
 
+## Kids mode
+
+A player can be marked as a kid when added (or later in the Players tab). Kids get their own ladder: **Little 4×4**, **Middle 6×6** and **Big 9×9** with plenty of clues, all solvable with singles. The timer is not shown (it is still recorded for the stats page), there are no penalties and no three-strike rule. A wrong number bounces back with a wobble and the row, column or box it clashes with lit up, so the rule is taught rather than enforced. Help is free and comes in two taps: *Help me* lights the squares to look at and says what to look for, *Show me* places the number and explains why in a child's words. A finished row, column or box glows, every finished board earns a sticker on a ten-sticker sheet, and the Players tab is behind a small multiplication question so a child cannot rename or remove anyone. Kids are ordinary players otherwise: same family code, same stats page (with a sticker-sheet card and a Kids filter), same daily board and shared links.
+
 ## Files
 
 | File | Purpose |
