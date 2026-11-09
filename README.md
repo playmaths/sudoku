@@ -4,6 +4,8 @@ A single-file, ad-free classic Sudoku for a shared family iPad and everyone's ph
 
 ## What it does
 
+- **Built for playing**: the board, entry mode and number pad fit on one screen on a phone, an iPad in either orientation and a laptop. Difficulty, the daily board and paper-puzzle entry live behind the level button; candidate highlighting, input style and settings behind the ⋮ button, so nothing distracts from the grid.
+
 - **Four difficulties** generated on the device, each with a unique solution and graded by the techniques it actually needs rather than by clue count: Easy and Medium are solvable with singles alone, Hard needs pairs, triples, pointing pairs or box-line reductions, and Master needs an X-Wing, Swordfish or Y-Wing but nothing the coach cannot explain. A **Daily Family Board** gives every player the same puzzle on a given day.
 - **Pro notation**: pen, corner pencil notes and Snyder-style center notes, with auto-notes and a digit "sniper" highlight.
 - **What-If Trail**: bookmark the board, try a hypothesis in teal ink, then rewind or commit.
