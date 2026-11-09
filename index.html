@@ -290,6 +290,15 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
     .sudoku-cell.state-conflict {
       background-color: #FEE2E2;
     }
+    .sudoku-cell.state-hint {
+      box-shadow: inset 0 0 0 2.5px #F59E0B;
+      background-color: #FEF3C7;
+    }
+    .sudoku-cell.state-noteslip {
+      box-shadow: inset 0 0 0 2px #DC2626;
+    }
+    .sudoku-cell.state-noteslip .notes-grid { opacity: 0.75; }
+    html.theme-dark .sudoku-cell.state-hint { background-color: #4A3A0A; box-shadow: inset 0 0 0 2.5px #D97706; }
 
     .cell-value {
       font-size: clamp(1.25rem, 4.2vw, 2rem);
@@ -666,7 +675,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         <button id="dailyChallengeBtn" type="button" class="w-full py-3 rounded-xl bg-amber-100 hover:bg-amber-200 border border-amber-300 text-amber-950 font-bold text-sm flex items-center justify-center gap-2">📅 Today's shared board <span class="font-normal text-xs opacity-80">(same for every player, at the current level)</span></button>
         <button id="newPuzzleBtn" type="button" class="w-full py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm">Another board at this level</button>
         <button id="restartBoardBtn" type="button" class="w-full py-3 rounded-xl bg-stone-100 hover:bg-stone-200 text-slate-800 font-bold text-sm">Restart this board from the clues</button>
-        <p class="text-[11px] text-slate-500 leading-relaxed">Scoring: each hint adds 15s on Easy, 30s Medium, 60s Hard, 90s Master, 120s Grandmaster. A wrong digit (with red marking on) adds 15s Medium, 30s Hard, 60s Master, 90s Grandmaster, and a third wrong digit on Hard or above ends the board. Turn red marking off for a Purist solve: no checks, no penalties, 👑 if it's right.</p>
+        <p class="text-[11px] text-slate-500 leading-relaxed">Scoring: a hint comes in three taps (look here, explain, apply) and each tap costs a third of a hint; a whole hint adds 15s on Easy, 30s Medium, 60s Hard, 90s Master, 120s Grandmaster. A wrong digit (with red marking on) adds 15s Medium, 30s Hard, 60s Master, 90s Grandmaster, and a third wrong digit on Hard or above ends the board. Turn red marking off for a Purist solve: no checks, no penalties, 👑 if it's right.</p>
         <button id="newspaperEntryBtn" type="button" class="w-full py-3 rounded-xl bg-stone-100 hover:bg-stone-200 text-slate-800 font-bold text-sm flex items-center justify-center gap-2" title="Type in a puzzle from a newspaper or book">
           📰 <span id="newspaperBtnLabel">Enter Paper Puzzle</span>
         </button>
@@ -729,6 +738,9 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
           </label>
           <label class="flex items-center justify-between gap-3 text-sm text-slate-800 bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2.5">
             <span>Highlight row, column, box and same digits</span><input type="checkbox" id="toggleSmartHighlight" checked class="w-5 h-5 accent-blue-600 shrink-0" />
+          </label>
+          <label class="flex items-center justify-between gap-3 text-sm text-slate-800 bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2.5">
+            <span>Flag pencil-note slips<small class="block text-xs text-slate-500">Outlines a square whose notes no longer include its true digit. With red marking on it also counts as a mistake. For players who want their bookkeeping policed.</small></span><input type="checkbox" id="toggleNoteCheck" class="w-5 h-5 accent-blue-600 shrink-0" />
           </label>
         </div>
       </div>
@@ -1677,6 +1689,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
             autoCheck: true,
             smartHighlight: true,
             sound: true,
+            noteCheck: false,
             theme: 'system'
           },
           profiles: []
@@ -1933,10 +1946,13 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
       function penaltyFor(game) {
         const r = penaltyRules(game.difficulty);
         const mistakes = (game.mistakes || 0) * r.mistake;
-        const hints = (game.hintsUsed || 0) * r.hint;
+        const hints = Math.round(((game.hintThirds || 0) / 3) * r.hint);
         return { mistakes, hints, total: mistakes + hints, rules: r };
       }
       function formatPenalty(sec) { return sec > 0 ? '+' + formatTime(sec) : '—'; }
+      // Hints are counted in thirds; show whole numbers plainly and fractions with one decimal
+      function hintCount(game) { return Math.round(((game.hintThirds || 0) / 3) * 10) / 10; }
+      function fmtHints(n) { return Number.isInteger(n) ? String(n) : n.toFixed(1); }
 
       // ==================== ACTIVE GAME STATE ====================
       let currentGame = {
@@ -1945,6 +1961,10 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         isCustomEntry: false,
         multiSolution: false,
         hintElims: Array.from({ length: 81 }, () => []), // candidates the coach has ruled out, so it moves on to the next step
+        hintThirds: 0,        // each hint tap costs a third: look here, explain, apply
+        hintStage: null,      // { key, stage } of the step the coach is currently walking through
+        hintCells: [],        // cells highlighted by the coach
+        noteSlips: [],        // cells already charged for a pencil-note slip
         given: Array(81).fill(0),
         board: Array(81).fill(0),
         solution: Array(81).fill(0),
@@ -1979,6 +1999,8 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
           isDailyChallenge: currentGame.isDailyChallenge,
           multiSolution: !!currentGame.multiSolution,
           hintElims: currentGame.hintElims || Array.from({ length: 81 }, () => []),
+          hintThirds: currentGame.hintThirds || 0,
+          noteSlips: currentGame.noteSlips || [],
           given: currentGame.given,
           board: currentGame.board,
           solution: currentGame.solution,
@@ -2075,6 +2097,10 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
           isCustomEntry: false,
           multiSolution: false,
           hintElims: Array.from({ length: 81 }, () => []),
+          hintThirds: 0,
+          hintStage: null,
+          hintCells: [],
+          noteSlips: [],
           given: puzzle.slice(),
           board: puzzle.slice(),
           solution: solution.slice(),
@@ -2119,6 +2145,10 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
             isCustomEntry: false,
             multiSolution: !!sg.multiSolution,
             hintElims: sg.hintElims || Array.from({ length: 81 }, () => []),
+            hintThirds: sg.hintThirds || ((sg.hintsUsed || 0) * 3),
+            hintStage: null,
+            hintCells: [],
+            noteSlips: sg.noteSlips || [],
             given: sg.given,
             board: sg.board,
             solution: sg.solution,
@@ -2245,6 +2275,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         if (currentGame.isPaused || currentGame.isWon || currentGame.isLost) return;
         if (idx === null || idx < 0 || idx >= 81) return;
         hideHintBanner();
+        clearHintStage();
 
         // Newspaper Custom Entry mode
         if (currentGame.isCustomEntry) {
@@ -2287,6 +2318,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
             currentGame.trailCells.push(idx);
           }
           playTone(440, 55, 'sine', 0.03);
+          checkNoteSlip(idx);
         } else if (currentGame.noteTier === 'center') {
           if (currentGame.board[idx] !== 0) {
             currentGame.board[idx] = 0;
@@ -2305,6 +2337,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
             currentGame.trailCells.push(idx);
           }
           playTone(490, 55, 'sine', 0.03);
+          checkNoteSlip(idx);
         } else {
           // Pen Mode
           if (currentGame.board[idx] === digit) {
@@ -2357,6 +2390,28 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
       }
       // (the coach toast stays until dismissed so the explanation can be read while playing)
 
+      // Optional: a cell whose pencil notes no longer include its true digit is the slip that
+      // causes late-game errors. Outline it, and with checking on count it once as a mistake.
+      function noteSlipAt(idx) {
+        if (!appState.settings.noteCheck || currentGame.multiSolution || currentGame.isCustomEntry) return false;
+        if (currentGame.board[idx] !== 0) return false;
+        const notes = currentGame.notes[idx] || [];
+        return notes.length > 0 && !notes.includes(currentGame.solution[idx]);
+      }
+      function checkNoteSlip(idx) {
+        if (!noteSlipAt(idx)) return;
+        if (!currentGame.noteSlips) currentGame.noteSlips = [];
+        if (currentGame.noteSlips.includes(idx)) return;
+        currentGame.noteSlips.push(idx);
+        if (appState.settings.autoCheck) {
+          currentGame.mistakes++;
+          playTone(210, 180, 'sawtooth', 0.04);
+          showHintBanner('✏️ Pencil-note slip', `${rcName(idx)} no longer has its true digit among its notes. That counts as a mistake because it is how boards go wrong later.`);
+          const rules = penaltyRules(currentGame.difficulty);
+          if (rules.maxMistakes && currentGame.mistakes >= rules.maxMistakes) handleBoardLost();
+        }
+      }
+
       // Third mistake on Hard or Master: the board is over and goes into the record as lost
       function handleBoardLost() {
         currentGame.isLost = true;
@@ -2372,7 +2427,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
             finalSeconds: currentGame.seconds,
             penalty: 0,
             mistakes: currentGame.mistakes,
-            hints: currentGame.hintsUsed || 0,
+            hints: hintCount(currentGame),
             purist: false,
             result: 'lost'
           });
@@ -2390,6 +2445,10 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         currentGame.notes = Array.from({ length: 81 }, () => []);
         currentGame.centerNotes = Array.from({ length: 81 }, () => []);
         currentGame.hintElims = Array.from({ length: 81 }, () => []);
+        currentGame.hintThirds = 0;
+        currentGame.hintStage = null;
+        currentGame.hintCells = [];
+        currentGame.noteSlips = [];
         currentGame.seconds = 0;
         currentGame.mistakes = 0;
         currentGame.hintsUsed = 0;
@@ -2489,6 +2548,10 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
           currentGame.seconds = 0;
           currentGame.mistakes = 0;
           currentGame.hintsUsed = 0;
+          currentGame.hintThirds = 0;
+          currentGame.hintStage = null;
+          currentGame.hintCells = [];
+          currentGame.noteSlips = [];
           currentGame.undoStack = [];
           document.getElementById('newspaperBtnLabel').textContent = 'Enter Paper Puzzle';
           showHintBanner(
@@ -2524,7 +2587,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         currentGame.trailCells = [];
         playVictoryChime();
 
-        const isPuristCrown = !appState.settings.autoCheck && currentGame.mistakes === 0 && (currentGame.hintsUsed || 0) === 0;
+        const isPuristCrown = !appState.settings.autoCheck && currentGame.mistakes === 0 && (currentGame.hintThirds || 0) === 0;
 
         const profile = getActiveProfile();
         const todayStr = localDateStr();
@@ -2537,7 +2600,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
           finalSeconds,
           penalty: pen.total,
           mistakes: currentGame.mistakes,
-          hints: currentGame.hintsUsed || 0,
+          hints: hintCount(currentGame),
           purist: isPuristCrown,
           result: 'won'
         });
@@ -2549,7 +2612,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         document.getElementById('winModalDiff').textContent = currentGame.difficulty;
         document.getElementById('winModalTime').textContent = formatTime(currentGame.seconds);
         document.getElementById('winModalMistakes').textContent = String(currentGame.mistakes);
-        document.getElementById('winModalHints').textContent = String(currentGame.hintsUsed || 0);
+        document.getElementById('winModalHints').textContent = fmtHints(hintCount(currentGame));
         document.getElementById('winModalPenalty').textContent = formatPenalty(pen.total);
         document.getElementById('winModalFinal').textContent = formatTime(finalSeconds);
         const puristBanner = document.getElementById('winPuristBanner');
@@ -2578,6 +2641,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         if (currentGame.board[idx] === 0 && currentGame.notes[idx].length === 0 && !hasCNotes) return;
 
         pushUndoSnapshot();
+        clearHintStage();
         if (currentGame.board[idx] !== 0) clearHintElims();
         currentGame.board[idx] = 0;
         currentGame.notes[idx] = [];
@@ -2594,6 +2658,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         if (currentGame.isPaused || currentGame.isWon || currentGame.isLost) return;
         if (currentGame.undoStack.length === 0) return;
         const prev = currentGame.undoStack.pop();
+        clearHintStage();
         currentGame.board = prev.board;
         currentGame.notes = prev.notes;
         currentGame.centerNotes = prev.centerNotes || Array.from({ length: 81 }, () => []);
@@ -2638,21 +2703,47 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
       // Uses the same engine that graded the board. Placement steps fill one cell;
       // elimination steps remove only the pencil marks the logic rules out and never
       // overwrite the player's own notes.
+      // Three taps per step: 1) look here (cells lit), 2) the technique explained, 3) applied.
+      // Each tap costs a third of a hint. A contradiction warning costs a third; a reveal costs a whole hint.
+      function stepKey(step) {
+        if (!step) return 'none';
+        const cells = step.kind === 'place' ? [step.cell] : step.cells;
+        return `${step.technique}|${cells.join(',')}|${(step.digits || [step.digit]).join(',')}`;
+      }
+      function chargeHint(thirds) {
+        currentGame.hintThirds = (currentGame.hintThirds || 0) + thirds;
+        currentGame.hintsUsed = Math.ceil(currentGame.hintThirds / 3);
+      }
+      function nudgeText(step) {
+        if (step.kind === 'place') {
+          return step.technique === 'nakedSingle'
+            ? `Look at ${rcName(step.cell)}. Count which digits its row, column and box already hold.`
+            : `Look along ${step.unit.name}. One digit has only one square left where it can go.`;
+        }
+        if (step.technique === 'pointing') return `Look where the digit ${step.digits[0]} can still go in ${step.unit.name} and the box it crosses. Some pencil marks can come out.`;
+        if (step.technique === 'xWing' || step.technique === 'swordfish') return `Follow the digit ${step.digits[0]} across the highlighted rows and columns. It is boxed in.`;
+        if (step.technique === 'yWing' || step.technique === 'xyChain') return `Follow the highlighted two-candidate squares as a chain. One digit cannot survive at both ends.`;
+        if (step.technique === 'uniqueRectangle') return `The four highlighted squares form a rectangle across two boxes. Think about what a second solution would need.`;
+        return `Look at ${step.unit ? step.unit.name : 'the highlighted squares'}. A few squares share the same small set of candidates.`;
+      }
+
       function handleSmartHint() {
         if (currentGame.isPaused || currentGame.isWon || currentGame.isLost || currentGame.isCustomEntry) return;
         const profile = getActiveProfile();
         if (!profile) return;
         if (!profile.techniques) profile.techniques = { nakedSingles: 0, hiddenSingles: 0, pairs: 0, pointing: 0, wings: 0, reveals: 0 };
-        currentGame.hintsUsed = (currentGame.hintsUsed || 0) + 1;
 
         // A wrong digit on the board poisons every deduction, so point at it first
         if (!currentGame.multiSolution) {
           for (let i = 0; i < 81; i++) {
             if (currentGame.board[i] !== 0 && currentGame.board[i] !== currentGame.solution[i]) {
+              chargeHint(1);
+              clearHintStage();
               currentGame.selectedIdx = i;
+              currentGame.hintCells = [i];
               showHintBanner('💡 Contradiction Spotted', `${rcName(i)} currently holds ${currentGame.board[i]}, which cannot be right. Erase it to get back on track.`);
               saveState();
-              renderBoard();
+              renderAll();
               return;
             }
           }
@@ -2661,8 +2752,30 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         if (!currentGame.hintElims) clearHintElims();
         const cands = computeAllCands(currentGame.board).map((list, i) => list.filter(d => !currentGame.hintElims[i].includes(d)));
         const step = findLogicalStep(currentGame.board, cands);
+        const key = stepKey(step);
+        const st = currentGame.hintStage && currentGame.hintStage.key === key ? currentGame.hintStage : null;
+        const stage = st ? st.stage + 1 : 0;
+
+        if (step && stage < 2) {
+          chargeHint(1);
+          currentGame.hintStage = { key, stage };
+          currentGame.hintCells = step.kind === 'place' ? [step.cell] : step.cells.slice();
+          if (step.kind === 'place') currentGame.selectedIdx = step.cell; else currentGame.selectedIdx = step.cells[0];
+          currentGame.sniperDigit = step.kind === 'eliminate' ? step.digits[0] : null;
+          if (stage === 0) {
+            showHintBanner('👀 Look here', nudgeText(step) + ' Tap Explain for the technique, or work it out yourself.');
+          } else {
+            showHintBanner(step.title, step.text + (step.kind === 'place' ? ' Tap Apply to place it, or enter it yourself.' : ' Tap Apply to clear those pencil marks.'));
+          }
+          playTone(520, 70, 'sine', 0.04);
+          saveState();
+          renderAll();
+          return;
+        }
 
         if (step && step.kind === 'place') {
+          chargeHint(1);
+          clearHintStage();
           currentGame.selectedIdx = step.cell;
           pushUndoSnapshot();
           currentGame.board[step.cell] = step.digit;
@@ -2676,10 +2789,10 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
             });
           }
           if (currentGame.trailActive && !currentGame.trailCells.includes(step.cell)) currentGame.trailCells.push(step.cell);
-          const key = step.technique === 'nakedSingle' ? 'nakedSingles' : 'hiddenSingles';
-          profile.techniques[key] = (profile.techniques[key] || 0) + 1;
+          const tkey = step.technique === 'nakedSingle' ? 'nakedSingles' : 'hiddenSingles';
+          profile.techniques[tkey] = (profile.techniques[tkey] || 0) + 1;
           currentGame.sniperDigit = null;
-          showHintBanner(step.title, step.text);
+          showHintBanner(step.title, `${step.digit} placed at ${rcName(step.cell)}.`);
           playTone(680, 110, 'triangle', 0.05);
           checkWinCondition();
           saveState();
@@ -2688,6 +2801,8 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         }
 
         if (step && step.kind === 'eliminate') {
+          chargeHint(1);
+          clearHintStage();
           pushUndoSnapshot();
           let removed = 0;
           step.eliminations.forEach(e => {
@@ -2697,15 +2812,14 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
               if (k !== -1) { arr.splice(k, 1); removed++; }
             });
           });
-          const key = step.technique === 'pointing' ? 'pointing' : (step.level >= 4 ? 'wings' : 'pairs');
-          profile.techniques[key] = (profile.techniques[key] || 0) + 1;
+          const tkey = step.technique === 'pointing' ? 'pointing' : (step.level >= 4 ? 'wings' : 'pairs');
+          profile.techniques[tkey] = (profile.techniques[tkey] || 0) + 1;
           currentGame.selectedIdx = step.cells[0];
           currentGame.sniperDigit = step.digits[0];
           const where = step.eliminations.map(e => rcName(e.cell)).filter((v, i, arr) => arr.indexOf(v) === i).slice(0, 4).join('; ');
-          const tail = removed > 0
-            ? ` Removed ${removed} pencil mark${removed === 1 ? '' : 's'} (${where}).`
-            : ` It rules out ${step.digits.join(' and ')} at ${where}. Tap Fill Notes to see every candidate, then look again.`;
-          showHintBanner(step.title, step.text + tail);
+          showHintBanner(step.title, removed > 0
+            ? `Removed ${removed} pencil mark${removed === 1 ? '' : 's'} (${where}).`
+            : `${step.digits.join(' and ')} ruled out at ${where}. Tap Fill Notes to see every candidate, then look again.`);
           playTone(600, 100, 'triangle', 0.05);
           saveState();
           renderAll();
@@ -2716,6 +2830,8 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         let target = currentGame.selectedIdx;
         if (target === null || currentGame.board[target] !== 0) target = currentGame.board.findIndex(v => v === 0);
         if (target !== -1) {
+          chargeHint(3);
+          clearHintStage();
           const ans = currentGame.solution[target];
           currentGame.selectedIdx = target;
           pushUndoSnapshot();
@@ -2764,6 +2880,15 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
       // Any digit leaving the board can invalidate what the coach ruled out
       function clearHintElims() {
         currentGame.hintElims = Array.from({ length: 81 }, () => []);
+      }
+      function clearHintStage() {
+        currentGame.hintStage = null;
+        currentGame.hintCells = [];
+      }
+      function hintStageLabel() {
+        const st = currentGame.hintStage;
+        if (!st) return 'Hint';
+        return st.stage === 0 ? 'Explain' : 'Apply';
       }
 
       function hideHintBanner() {
@@ -2916,12 +3041,16 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
           const rules = penaltyRules(currentGame.difficulty);
           mistakeEl.textContent = rules.maxMistakes && !currentGame.isCustomEntry && !currentGame.multiSolution
             ? `${currentGame.mistakes}/${rules.maxMistakes}` : String(currentGame.mistakes);
+          const hintLabel = document.querySelector('#hintBtn span');
+          if (hintLabel) hintLabel.textContent = hintStageLabel();
+          const nextBtn = document.getElementById('hintNextBtn');
+          if (nextBtn) nextBtn.textContent = currentGame.hintStage ? hintStageLabel() : 'Next hint';
           const showMistakes = !!appState.settings.autoCheck;
-          const showHints = currentGame.hintsUsed > 0;
+          const showHints = (currentGame.hintThirds || 0) > 0;
           document.getElementById('mistakesWrap').classList.toggle('hidden', !showMistakes);
           mistakeEl.classList.toggle('text-red-600', !!rules.maxMistakes && currentGame.mistakes >= rules.maxMistakes - 1 && currentGame.mistakes > 0);
           document.getElementById('hintsPill').classList.toggle('hidden', !showHints);
-          document.getElementById('hintsCounter').textContent = String(currentGame.hintsUsed || 0);
+          document.getElementById('hintsCounter').textContent = fmtHints(hintCount(currentGame));
           document.getElementById('scorePill').classList.toggle('hidden', !showMistakes && !showHints);
         }
 
@@ -2954,6 +3083,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
             noticeBadge.textContent = localDateStr();
           } else {
             noticeEl.className = 'hidden';
+            noticeText.textContent = '';
           }
         }
 
@@ -3073,6 +3203,8 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
 
           const isError = isCellWrong(i);
 
+          if (currentGame.hintCells && currentGame.hintCells.includes(i)) classes.push('state-hint');
+          if (noteSlipAt(i)) classes.push('state-noteslip');
           if (i === selIdx) {
             classes.push('state-selected');
           } else if (isError) {
@@ -3436,7 +3568,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
                 <td class="py-2.5 pr-4 font-medium">${g.date}</td>
                 <td class="py-2.5 px-4 capitalize font-semibold">${g.difficulty}</td>
                 <td class="py-2.5 px-4 font-mono font-bold text-blue-700">${g.result === 'lost' ? '—' : formatTime(fin)}${penaltyNote}</td>
-                <td class="py-2.5 px-4">${g.mistakes} · ${g.hints || 0}</td>
+                <td class="py-2.5 px-4">${g.mistakes} · ${fmtHints(g.hints || 0)}</td>
                 <td class="py-2.5 pl-4">${badge}</td>
               </tr>
             `;
@@ -3646,6 +3778,11 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         });
         document.getElementById('toggleSmartHighlight').addEventListener('change', (e) => {
           appState.settings.smartHighlight = e.target.checked;
+          saveState();
+          renderBoard();
+        });
+        document.getElementById('toggleNoteCheck').addEventListener('change', (e) => {
+          appState.settings.noteCheck = e.target.checked;
           saveState();
           renderBoard();
         });
@@ -3878,6 +4015,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         document.getElementById('toggleLargeFont').checked = !!appState.settings.largeFont;
         document.getElementById('toggleAutoCheck').checked = appState.settings.autoCheck !== false;
         document.getElementById('toggleSmartHighlight').checked = appState.settings.smartHighlight !== false;
+        document.getElementById('toggleNoteCheck').checked = !!appState.settings.noteCheck;
         bindEvents();
         bindWelcomeEvents();
         loadOrStartProfileGame();
