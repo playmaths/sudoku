@@ -19,6 +19,7 @@ A single-file, ad-free classic Sudoku for a shared family iPad and everyone's ph
 - **Replay** any recent game from the stats page: step through the moves with the engine saying whether each digit was right and which technique was available.
 - **Challenge a board**: the win screen and the new-board sheet share a link that opens the exact same board for someone else; results are tagged with who sent it.
 - **Today's board, This week and Achievements** cards on the stats page; CSV export of every game.
+- **Solver's shortcuts**: long-press a pad digit to lock it and place it by tapping squares, long-press a filled square to light that digit everywhere, long-press an empty square to flip between pen and notes. A fourth entry mode paints squares in six colours for tracking chains. Settings for auto-removing candidates, starting boards with all candidates filled, and a stricter Hard band that demands at least four pair, triple or pointing steps.
 - **Optional pencil-note slip check** for players who want their bookkeeping policed, haptic taps where the device supports them, keyboard and screen-reader labels on the board.
 - **Honest timer**: counts wall-clock time while the board is on screen, pauses when the app is in the background, and survives a reload.
 
