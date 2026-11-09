@@ -1089,7 +1089,8 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
           <button id="welcomeJoinBtn" type="button" class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm transition">Join</button>
         </div>
         <p id="welcomeJoinState" class="text-xs font-semibold text-slate-600 mt-2 min-h-[1rem]"></p>
-        <p class="text-[11px] text-slate-400 mt-3 leading-snug">Tip: links opened inside WhatsApp use a throwaway browser that forgets everything. Open the link in Safari or Chrome, then Add to Home Screen.</p>
+        <p id="welcomeDiag" class="text-[11px] text-slate-500 mt-3 leading-snug font-medium"></p>
+        <p class="text-[11px] text-slate-400 mt-2 leading-snug">Tip: links opened inside WhatsApp use a throwaway browser that forgets everything. Open the link in Safari or Chrome, then Add to Home Screen.</p>
       </div>
     </div>
   </div>
@@ -1969,18 +1970,30 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
 
       let appState = createDefaultState();
 
+      let loadDiag = { storage: 'unknown', found: false, players: 0, removed: 0, family: null, error: null };
+      function storageWorks() {
+        try { const k = '__fs_probe__'; localStorage.setItem(k, '1'); const ok = localStorage.getItem(k) === '1'; localStorage.removeItem(k); return ok; } catch (e) { return false; }
+      }
       function loadState() {
+        loadDiag.storage = storageWorks() ? 'ok' : 'blocked';
+        let raw = null;
+        try { raw = localStorage.getItem(STORAGE_KEY); } catch (e) { loadDiag.error = 'read: ' + e.message; return; }
+        if (!raw) return;
+        loadDiag.found = true;
+        let parsed = null;
+        try { parsed = JSON.parse(raw); } catch (e) { loadDiag.error = 'parse: ' + e.message; return; }
+        if (!parsed || !Array.isArray(parsed.profiles)) { loadDiag.error = 'shape: no player list'; return; }
+        // a single corrupt player must not cost the whole household
+        parsed.profiles = parsed.profiles.filter(pr => pr && typeof pr === 'object' && pr.id);
         try {
-          const raw = localStorage.getItem(STORAGE_KEY);
-          if (raw) {
-            const parsed = JSON.parse(raw);
-            if (parsed && Array.isArray(parsed.profiles)) {
-              appState = normalizeState(parsed);
-            }
-          }
+          appState = normalizeState(parsed);
         } catch (e) {
-          // Fallback to in-memory state
+          loadDiag.error = 'normalise: ' + e.message;
+          appState = Object.assign(createDefaultState(), { profiles: parsed.profiles, activeProfileId: parsed.activeProfileId || null, family: parsed.family || null, settings: Object.assign(createDefaultState().settings, parsed.settings || {}) });
         }
+        loadDiag.players = appState.profiles.filter(pr => !pr.removed).length;
+        loadDiag.removed = appState.profiles.filter(pr => pr.removed).length;
+        loadDiag.family = appState.family || null;
       }
 
       function saveState() {
@@ -2014,6 +2027,31 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         if (modal) modal.classList.remove('hidden');
         const input = document.getElementById('welcomeNameInput');
         if (input) setTimeout(() => input.focus(), 50);
+        const famInput = document.getElementById('welcomeFamilyInput');
+        if (famInput && appState.family && !famInput.value) famInput.value = appState.family;
+        const diag = document.getElementById('welcomeDiag');
+        if (diag) {
+          const bits = [];
+          if (loadDiag.storage === 'blocked') bits.push('This browser is not allowing the app to save anything, so it starts empty every time. On iPhone/iPad: Settings → Safari → turn off "Block All Cookies", and make sure this is not a Private tab.');
+          else if (loadDiag.error) bits.push(`Saved data could not be read (${loadDiag.error}).`);
+          else if (!loadDiag.found) bits.push('Nothing saved in this browser yet.');
+          else if (loadDiag.players === 0 && loadDiag.removed > 0) bits.push(`All ${loadDiag.removed} saved player${loadDiag.removed === 1 ? ' was' : 's were'} removed. Add a player, or join the family code.`);
+          else bits.push(`Saved: ${loadDiag.players} player${loadDiag.players === 1 ? '' : 's'}.`);
+          if (loadDiag.family) bits.push(`Family code on this device: ${loadDiag.family}.`);
+          diag.textContent = bits.join(' ');
+        }
+        // A device that already knows its family should not need the name step
+        if (famOK() && loadDiag.storage !== 'blocked') {
+          famPull(true).then(() => {
+            if (livePlayers().length && modal) {
+              modal.classList.add('hidden');
+              if (!getActiveProfile()) appState.activeProfileId = livePlayers()[0].id;
+              persistState();
+              loadOrStartProfileGame();
+              renderAll();
+            }
+          });
+        }
       }
 
       // ==================== SCORING ====================
@@ -2312,9 +2350,9 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
 
       document.addEventListener('visibilitychange', () => {
         timerLastTick = Date.now();
-        if (document.hidden) saveState();
+        if (document.hidden && livePlayers().length) saveState();
       });
-      window.addEventListener('pagehide', () => saveState());
+      window.addEventListener('pagehide', () => { if (livePlayers().length) saveState(); });
 
       function formatTime(totalSec) {
         const m = Math.floor(totalSec / 60);
