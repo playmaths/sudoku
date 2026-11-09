@@ -36,6 +36,10 @@ A player can be marked as a kid when added (or later in the Players tab). Kids g
 
 Tailwind CSS (compiled for this page) and Chart.js are inlined in `index.html`, so nothing is fetched from a CDN. The Inter font loads from Google Fonts when online and falls back to the system font otherwise.
 
+## Architecture
+
+[docs/architecture.html](docs/architecture.html) is a one-page diagram of how the pieces fit, drawn in the [diagram-design](https://github.com/cathrynlavery/diagram-design) format: the screens, the game state, the engine on the page and in its worker, the device store, the family document and the hosting. Open it at https://playmaths.github.io/sudoku/docs/architecture.html.
+
 ## Sync
 
 Local first: every change is written to the browser at once and the game works offline. With a family code, the players are also kept in Firestore through its plain REST API, in the same `playmaths` project and `families/{code}` collection as Number Garden, as one document with two fields: `data` (JSON with `kind: "sudoku"`, `savedAt` and the players) and `savedAt`. A push happens 1.5 seconds after any change; a pull on open, when the app returns to the foreground and when the device comes back online. Each player carries `updatedAt` and the newer copy of each player wins, so different people on different devices never overwrite each other. Joining a code drops empty local players whose name matches a family player, so nobody appears twice. A code that holds a Number Garden document is refused. The web API key is a public identifier; access is governed by the Firestore rules, which allow one document per nine-character code with only those two fields.
