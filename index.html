@@ -266,10 +266,10 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
     .sudoku-cell.box-bottom {
       border-bottom: 2.5px solid var(--grid-box);
     }
-    .sudoku-cell.col-8 {
+    .sudoku-cell.last-col {
       border-right: none;
     }
-    .sudoku-cell.row-8 {
+    .sudoku-cell.last-row {
       border-bottom: none;
     }
 
@@ -2082,7 +2082,52 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
       function fmtHints(n) { return Number.isInteger(n) ? String(n) : n.toFixed(1); }
 
       // ==================== ACTIVE GAME STATE ====================
+      // ==================== SMALL-GRID SOLVER ====================
+      // Backtracking solver for any of the three sizes (the engine script's solver is 9×9 only)
+      function kidSolve(puzzle, n, limit = 2) {
+        const b = puzzle.slice();
+        const [bw, bh] = boxDims(n);
+        const boxOfN = i => Math.floor(Math.floor(i / n) / bh) * (n / bw) + Math.floor((i % n) / bw);
+        const rowM = Array(n).fill(0), colM = Array(n).fill(0), boxM = Array(n).fill(0);
+        for (let i = 0; i < n * n; i++) if (b[i]) { const bit = 1 << b[i]; rowM[Math.floor(i / n)] |= bit; colM[i % n] |= bit; boxM[boxOfN(i)] |= bit; }
+        const ALL = ((1 << (n + 1)) - 1) & ~1;
+        let count = 0, first = null;
+        (function solve() {
+          let best = -1, bestMask = 0, bestCount = 99;
+          for (let i = 0; i < n * n; i++) {
+            if (b[i]) continue;
+            const mask = ALL & ~(rowM[Math.floor(i / n)] | colM[i % n] | boxM[boxOfN(i)]);
+            let k = 0; for (let m = mask; m; m &= m - 1) k++;
+            if (k === 0) return;
+            if (k < bestCount) { bestCount = k; best = i; bestMask = mask; if (k === 1) break; }
+          }
+          if (best === -1) { count++; if (!first) first = b.slice(); return; }
+          const r = Math.floor(best / n), c = best % n, bx = boxOfN(best);
+          for (let d = 1; d <= n; d++) {
+            const bit = 1 << d;
+            if (!(bestMask & bit)) continue;
+            b[best] = d; rowM[r] |= bit; colM[c] |= bit; boxM[bx] |= bit;
+            solve();
+            rowM[r] &= ~bit; colM[c] &= ~bit; boxM[bx] &= ~bit; b[best] = 0;
+            if (count >= limit) return;
+          }
+        })();
+        return { count, solution: first };
+      }
+
+      // ==================== GRID GEOMETRY ====================
+      // 9×9 with 3×3 boxes for the grown-up levels; 4×4 (2×2) and 6×6 (3 wide × 2 tall) for kids
+      function boardN() { return currentGame.size || 9; }
+      function boardCells() { const n = boardN(); return n * n; }
+      function boxDims(n = boardN()) { return n === 9 ? [3, 3] : n === 6 ? [3, 2] : [2, 2]; } // [columns per box, rows per box]
+      function cellRC(i, n = boardN()) { return [Math.floor(i / n), i % n]; }
+      function boxIndexOf(i, n = boardN()) { const [bw, bh] = boxDims(n); const [r, c] = cellRC(i, n); return Math.floor(r / bh) * (n / bw) + Math.floor(c / bw); }
+      function cellName(i, n = boardN()) { const [r, c] = cellRC(i, n); return `Row ${r + 1}, Column ${c + 1}`; }
+      function emptyNotes(cells = boardCells()) { return Array.from({ length: cells }, () => []); }
+      function sizeOfLength(len) { return Math.round(Math.sqrt(len)); }
+
       let currentGame = {
+        size: 9,
         difficulty: 'hard',
         isDailyChallenge: false,
         isCustomEntry: false,
@@ -2126,18 +2171,19 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         profile.savedGame = JSON.parse(JSON.stringify({
           difficulty: currentGame.difficulty,
           isDailyChallenge: currentGame.isDailyChallenge,
+          size: currentGame.size || 9,
           dailyDate: currentGame.dailyDate || null,
           sharedFrom: currentGame.sharedFrom || null,
           moves: currentGame.moves || [],
           multiSolution: !!currentGame.multiSolution,
-          hintElims: currentGame.hintElims || Array.from({ length: 81 }, () => []),
+          hintElims: currentGame.hintElims || emptyNotes(),
           hintThirds: currentGame.hintThirds || 0,
           noteSlips: currentGame.noteSlips || [],
           given: currentGame.given,
           board: currentGame.board,
           solution: currentGame.solution,
           notes: currentGame.notes,
-          centerNotes: currentGame.centerNotes || Array.from({ length: 81 }, () => []),
+          centerNotes: currentGame.centerNotes || emptyNotes(),
           seconds: currentGame.seconds,
           mistakes: currentGame.mistakes,
           hintsUsed: currentGame.hintsUsed || 0,
@@ -2222,7 +2268,9 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
       // Start a specific board (shared link, prefetched or freshly built)
       function startNewPuzzleNow(difficulty, isDaily, made, meta = {}) {
         const puzzle = made.puzzle, solution = made.solution;
+        const cells = puzzle.length;
         currentGame = {
+          size: sizeOfLength(cells),
           difficulty,
           isDailyChallenge: isDaily,
           dailyDate: isDaily ? localDateStr() : null,
@@ -2230,7 +2278,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
           moves: [],
           isCustomEntry: false,
           multiSolution: false,
-          hintElims: Array.from({ length: 81 }, () => []),
+          hintElims: emptyNotes(cells),
           hintThirds: 0,
           hintStage: null,
           hintCells: [],
@@ -2238,8 +2286,8 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
           given: puzzle.slice(),
           board: puzzle.slice(),
           solution: solution.slice(),
-          notes: Array.from({ length: 81 }, () => []),
-          centerNotes: Array.from({ length: 81 }, () => []),
+          notes: emptyNotes(cells),
+          centerNotes: emptyNotes(cells),
           seconds: 0,
           mistakes: 0,
           hintsUsed: 0,
@@ -2271,9 +2319,11 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
           return;
         }
         const defaultDiff = 'easy';
-        if (profile && profile.savedGame && !profile.savedGame.isWon && !profile.savedGame.isLost && Array.isArray(profile.savedGame.board) && profile.savedGame.board.length === 81) {
+        if (profile && profile.savedGame && !profile.savedGame.isWon && !profile.savedGame.isLost && Array.isArray(profile.savedGame.board) && [16, 36, 81].includes(profile.savedGame.board.length)) {
           const sg = profile.savedGame;
+          const cells = sg.board.length;
           currentGame = {
+            size: sizeOfLength(cells),
             difficulty: sg.difficulty || defaultDiff,
             isDailyChallenge: !!sg.isDailyChallenge,
             dailyDate: sg.dailyDate || null,
@@ -2281,7 +2331,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
             moves: sg.moves || [],
             isCustomEntry: false,
             multiSolution: !!sg.multiSolution,
-            hintElims: sg.hintElims || Array.from({ length: 81 }, () => []),
+            hintElims: sg.hintElims || emptyNotes(cells),
             hintThirds: sg.hintThirds || ((sg.hintsUsed || 0) * 3),
             hintStage: null,
             hintCells: [],
@@ -2289,8 +2339,8 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
             given: sg.given,
             board: sg.board,
             solution: sg.solution,
-            notes: sg.notes || Array.from({ length: 81 }, () => []),
-            centerNotes: sg.centerNotes || Array.from({ length: 81 }, () => []),
+            notes: sg.notes || emptyNotes(cells),
+            centerNotes: sg.centerNotes || emptyNotes(cells),
             seconds: sg.seconds || 0,
             mistakes: sg.mistakes || 0,
             hintsUsed: sg.hintsUsed || 0,
@@ -2370,8 +2420,8 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         currentGame.undoStack.push({
           board: currentGame.board.slice(),
           notes: currentGame.notes.map(n => n.slice()),
-          centerNotes: (currentGame.centerNotes || Array.from({ length: 81 }, () => [])).map(n => n.slice()),
-          hintElims: (currentGame.hintElims || Array.from({ length: 81 }, () => [])).map(n => n.slice()),
+          centerNotes: (currentGame.centerNotes || emptyNotes()).map(n => n.slice()),
+          hintElims: (currentGame.hintElims || emptyNotes()).map(n => n.slice()),
           trailCells: (currentGame.trailCells || []).slice()
         });
         if (currentGame.undoStack.length > 40) currentGame.undoStack.shift();
@@ -2379,16 +2429,14 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
 
       function arePeers(idx1, idx2) {
         if (idx1 === idx2) return false;
-        const r1 = Math.floor(idx1 / 9), c1 = idx1 % 9;
-        const r2 = Math.floor(idx2 / 9), c2 = idx2 % 9;
+        const [r1, c1] = cellRC(idx1), [r2, c2] = cellRC(idx2);
         if (r1 === r2 || c1 === c2) return true;
-        if (Math.floor(r1 / 3) === Math.floor(r2 / 3) && Math.floor(c1 / 3) === Math.floor(c2 / 3)) return true;
-        return false;
+        return boxIndexOf(idx1) === boxIndexOf(idx2);
       }
 
       function hasRowColBoxConflict(idx, val, boardRef = currentGame.board) {
         if (!val) return false;
-        for (let i = 0; i < 81; i++) {
+        for (let i = 0; i < boardCells(); i++) {
           if (i !== idx && boardRef[i] === val && arePeers(idx, i)) {
             return true;
           }
@@ -2410,7 +2458,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
 
       function applyDigitToCell(idx, digit) {
         if (currentGame.isPaused || currentGame.isWon || currentGame.isLost) return;
-        if (idx === null || idx < 0 || idx >= 81) return;
+        if (idx === null || idx < 0 || idx >= boardCells()) return;
         hideHintBanner();
         clearHintStage();
 
@@ -2509,7 +2557,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
               buzz(12);
             }
             // A placed digit clears that candidate from the pencil notes of its row, column and box
-            for (let i = 0; i < 81; i++) {
+            for (let i = 0; i < boardCells(); i++) {
               if (arePeers(idx, i)) {
                 const pNotes = currentGame.notes[i];
                 const nIdx = pNotes.indexOf(digit);
@@ -2548,7 +2596,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         if (appState.settings.autoCheck) {
           currentGame.mistakes++;
           playTone(210, 180, 'sawtooth', 0.04);
-          showHintBanner('✏️ Pencil-note slip', `${rcName(idx)} no longer has its true digit among its notes. That counts as a mistake because it is how boards go wrong later.`);
+          showHintBanner('✏️ Pencil-note slip', `${cellName(idx)} no longer has its true digit among its notes. That counts as a mistake because it is how boards go wrong later.`);
           const rules = penaltyRules(currentGame.difficulty);
           if (rules.maxMistakes && currentGame.mistakes >= rules.maxMistakes) handleBoardLost();
         }
@@ -2589,9 +2637,9 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
       function restartCurrentBoard() {
         if (currentGame.isCustomEntry) return;
         currentGame.board = currentGame.given.slice();
-        currentGame.notes = Array.from({ length: 81 }, () => []);
-        currentGame.centerNotes = Array.from({ length: 81 }, () => []);
-        currentGame.hintElims = Array.from({ length: 81 }, () => []);
+        currentGame.notes = emptyNotes();
+        currentGame.centerNotes = emptyNotes();
+        currentGame.hintElims = emptyNotes();
         currentGame.hintThirds = 0;
         currentGame.hintStage = null;
         currentGame.hintCells = [];
@@ -2627,7 +2675,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         currentGame.trailSnapshot = {
           board: currentGame.board.slice(),
           notes: currentGame.notes.map(n => n.slice()),
-          centerNotes: (currentGame.centerNotes || Array.from({ length: 81 }, () => [])).map(n => n.slice())
+          centerNotes: (currentGame.centerNotes || emptyNotes()).map(n => n.slice())
         };
         currentGame.trailCells = [];
         playTone(540, 80, 'triangle', 0.05);
@@ -2640,7 +2688,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         pushUndoSnapshot();
         currentGame.board = currentGame.trailSnapshot.board.slice();
         currentGame.notes = currentGame.trailSnapshot.notes.map(n => n.slice());
-        currentGame.centerNotes = (currentGame.trailSnapshot.centerNotes || Array.from({ length: 81 }, () => [])).map(n => n.slice());
+        currentGame.centerNotes = (currentGame.trailSnapshot.centerNotes || emptyNotes()).map(n => n.slice());
         clearHintElims();
         currentGame.trailActive = false;
         currentGame.trailSnapshot = null;
@@ -2664,6 +2712,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
       function toggleNewspaperEntryMode() {
         if (!currentGame.isCustomEntry) {
           currentGame.isCustomEntry = true;
+          currentGame.size = 9;
           currentGame.moves = [];
           currentGame.dailyDate = null;
           currentGame.sharedFrom = null;
@@ -2672,8 +2721,9 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
           currentGame.given = Array(81).fill(0);
           currentGame.board = Array(81).fill(0);
           currentGame.solution = Array(81).fill(0);
-          currentGame.notes = Array.from({ length: 81 }, () => []);
-          currentGame.centerNotes = Array.from({ length: 81 }, () => []);
+          currentGame.notes = emptyNotes(81);
+          currentGame.centerNotes = emptyNotes(81);
+          currentGame.hintElims = emptyNotes(81);
           currentGame.seconds = 0;
           currentGame.mistakes = 0;
           currentGame.trailActive = false;
@@ -2722,10 +2772,10 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         if (currentGame.multiSolution) {
           // A paper puzzle with several valid answers: any full board with no conflicts wins
           if (currentGame.board.includes(0)) return false;
-          for (let i = 0; i < 81; i++) {
+          for (let i = 0; i < boardCells(); i++) {
             if (hasRowColBoxConflict(i, currentGame.board[i])) return false;
           }
-        } else for (let i = 0; i < 81; i++) {
+        } else for (let i = 0; i < boardCells(); i++) {
           if (currentGame.board[i] !== currentGame.solution[i]) {
             if (!appState.settings.autoCheck && !currentGame.board.includes(0)) {
               showHintBanner('Board Full, Not Solved Yet', 'Every square is filled but the puzzle is not correct. Look for a digit repeated in a row, column or 3×3 box.');
@@ -2818,11 +2868,11 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         if (currentGame.undoStack.length === 0) return;
         const prev = currentGame.undoStack.pop();
         clearHintStage();
-        for (let i = 0; i < 81; i++) if (currentGame.board[i] !== prev.board[i]) (currentGame.moves || (currentGame.moves = [])).push([i, prev.board[i], 'u', currentGame.seconds]);
+        for (let i = 0; i < boardCells(); i++) if (currentGame.board[i] !== prev.board[i]) (currentGame.moves || (currentGame.moves = [])).push([i, prev.board[i], 'u', currentGame.seconds]);
         currentGame.board = prev.board;
         currentGame.notes = prev.notes;
-        currentGame.centerNotes = prev.centerNotes || Array.from({ length: 81 }, () => []);
-        currentGame.hintElims = prev.hintElims || Array.from({ length: 81 }, () => []);
+        currentGame.centerNotes = prev.centerNotes || emptyNotes();
+        currentGame.hintElims = prev.hintElims || emptyNotes();
         currentGame.trailCells = prev.trailCells || [];
         playTone(380, 65, 'sine', 0.04);
         saveState();
@@ -2834,7 +2884,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
       function computeCandidateList(idx) {
         if (currentGame.board[idx] !== 0) return [];
         const cands = [];
-        for (let d = 1; d <= 9; d++) {
+        for (let d = 1; d <= boardN(); d++) {
           if (!hasRowColBoxConflict(idx, d)) cands.push(d);
         }
         return cands;
@@ -2843,7 +2893,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
       function handleAutoNotes() {
         if (currentGame.isPaused || currentGame.isWon || currentGame.isLost || currentGame.isCustomEntry) return;
         pushUndoSnapshot();
-        for (let i = 0; i < 81; i++) {
+        for (let i = 0; i < boardCells(); i++) {
           const cands = computeCandidateList(i);
           currentGame.notes[i] = cands;
           // Also auto-highlight 2-candidate bivalue cells in Center Notes for Snyder fans
@@ -2895,13 +2945,13 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
 
         // A wrong digit on the board poisons every deduction, so point at it first
         if (!currentGame.multiSolution) {
-          for (let i = 0; i < 81; i++) {
+          for (let i = 0; i < boardCells(); i++) {
             if (currentGame.board[i] !== 0 && currentGame.board[i] !== currentGame.solution[i]) {
               chargeHint(1);
               clearHintStage();
               currentGame.selectedIdx = i;
               currentGame.hintCells = [i];
-              showHintBanner('💡 Contradiction Spotted', `${rcName(i)} currently holds ${currentGame.board[i]}, which cannot be right. Erase it to get back on track.`);
+              showHintBanner('💡 Contradiction Spotted', `${cellName(i)} currently holds ${currentGame.board[i]}, which cannot be right. Erase it to get back on track.`);
               saveState();
               renderAll();
               return;
@@ -2910,6 +2960,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         }
 
         if (!currentGame.hintElims) clearHintElims();
+        if (boardN() !== 9) return;
         const cands = computeAllCands(currentGame.board).map((list, i) => list.filter(d => !currentGame.hintElims[i].includes(d)));
         const step = findLogicalStep(currentGame.board, cands);
         const key = stepKey(step);
@@ -2942,7 +2993,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
           currentGame.board[step.cell] = step.digit;
           currentGame.notes[step.cell] = [];
           currentGame.centerNotes[step.cell] = [];
-          for (let i = 0; i < 81; i++) {
+          for (let i = 0; i < boardCells(); i++) {
             if (!arePeers(step.cell, i)) continue;
             [currentGame.notes[i], currentGame.centerNotes[i] || []].forEach(arr => {
               const k = arr.indexOf(step.digit);
@@ -2953,7 +3004,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
           const tkey = step.technique === 'nakedSingle' ? 'nakedSingles' : 'hiddenSingles';
           profile.techniques[tkey] = (profile.techniques[tkey] || 0) + 1;
           currentGame.sniperDigit = null;
-          showHintBanner(step.title, `${step.digit} placed at ${rcName(step.cell)}.`);
+          showHintBanner(step.title, `${step.digit} placed at ${cellName(step.cell)}.`);
           playTone(680, 110, 'triangle', 0.05);
           checkWinCondition();
           saveState();
@@ -3001,7 +3052,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
           currentGame.notes[target] = [];
           currentGame.centerNotes[target] = [];
           profile.techniques.reveals = (profile.techniques.reveals || 0) + 1;
-          showHintBanner('💡 Cell Revealed', `This position needs a technique beyond what the coach teaches (through X-Wing, Y-Wing, XY-Chain and Unique Rectangle), so ${ans} was filled in at ${rcName(target)} to open the board up.`);
+          showHintBanner('💡 Cell Revealed', `This position needs a technique beyond what the coach teaches (through X-Wing, Y-Wing, XY-Chain and Unique Rectangle), so ${ans} was filled in at ${cellName(target)} to open the board up.`);
           playTone(680, 110, 'triangle', 0.05);
           checkWinCondition();
           saveState();
@@ -3041,7 +3092,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
 
       // Any digit leaving the board can invalidate what the coach ruled out
       function clearHintElims() {
-        currentGame.hintElims = Array.from({ length: 81 }, () => []);
+        currentGame.hintElims = emptyNotes();
       }
       function clearHintStage() {
         currentGame.hintStage = null;
@@ -3308,7 +3359,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         });
         bar.appendChild(offBtn);
 
-        for (let d = 1; d <= 9; d++) {
+        for (let d = 1; d <= boardN(); d++) {
           const active = currentGame.sniperDigit === d;
           const b = document.createElement('button');
           b.type = 'button';
@@ -3343,6 +3394,11 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         }
 
         boardEl.innerHTML = '';
+        const n = boardN();
+        const [bw, bh] = boxDims(n);
+        boardEl.style.gridTemplateColumns = `repeat(${n}, minmax(0, 1fr))`;
+        boardEl.style.gridTemplateRows = `repeat(${n}, minmax(0, 1fr))`;
+        boardEl.dataset.size = String(n);
 
         const selIdx = currentGame.selectedIdx;
         const selectedVal = selIdx !== null ? currentGame.board[selIdx] : 0;
@@ -3350,9 +3406,8 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
           ? currentGame.sniperDigit
           : (currentGame.inputStyle === 'digit-first' && currentGame.lockedDigit ? currentGame.lockedDigit : selectedVal);
 
-        for (let i = 0; i < 81; i++) {
-          const r = Math.floor(i / 9);
-          const c = i % 9;
+        for (let i = 0; i < boardCells(); i++) {
+          const [r, c] = cellRC(i, n);
           const val = currentGame.board[i];
           const isGiven = currentGame.given[i] !== 0;
           const isTrailCell = currentGame.trailCells && currentGame.trailCells.includes(i);
@@ -3363,9 +3418,9 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
           );
 
           const cell = document.createElement('div');
-          const classes = ['sudoku-cell', `row-${r}`, `col-${c}`];
-          if (c === 2 || c === 5) classes.push('box-right');
-          if (r === 2 || r === 5) classes.push('box-bottom');
+          const classes = ['sudoku-cell'];
+          if (c === n - 1) classes.push('last-col'); else if ((c + 1) % bw === 0) classes.push('box-right');
+          if (r === n - 1) classes.push('last-row'); else if ((r + 1) % bh === 0) classes.push('box-bottom');
 
           const isError = isCellWrong(i);
 
@@ -3389,7 +3444,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
           cell.setAttribute('role', 'gridcell');
           cell.tabIndex = i === selIdx ? 0 : -1;
           cell.setAttribute('aria-selected', i === selIdx ? 'true' : 'false');
-          cell.setAttribute('aria-label', `${rcName(i)}: ${val ? (isGiven ? `given ${val}` : `${val}`) : (cornerNotes.length ? `notes ${cornerNotes.join(' ')}` : 'empty')}${isError ? ', marked wrong' : ''}`);
+          cell.setAttribute('aria-label', `${cellName(i)}: ${val ? (isGiven ? `given ${val}` : `${val}`) : (cornerNotes.length ? `notes ${cornerNotes.join(' ')}` : 'empty')}${isError ? ', marked wrong' : ''}`);
 
           if (isTrailCell) {
             const dot = document.createElement('span');
@@ -3407,7 +3462,9 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
             if (cornerNotes.length > 0) {
               const notesGrid = document.createElement('div');
               notesGrid.className = 'notes-grid';
-              for (let d = 1; d <= 9; d++) {
+              notesGrid.style.gridTemplateColumns = `repeat(${bw}, 1fr)`;
+              notesGrid.style.gridTemplateRows = `repeat(${bh}, 1fr)`;
+              for (let d = 1; d <= boardN(); d++) {
                 const nd = document.createElement('div');
                 const hasNote = cornerNotes.includes(d);
                 let noteCls = 'note-digit';
@@ -3454,16 +3511,18 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         if (!container) return;
         container.innerHTML = '';
 
-        const counts = Array(10).fill(0);
-        for (let i = 0; i < 81; i++) {
+        const n = boardN();
+        container.style.gridTemplateColumns = `repeat(${n}, minmax(0, 1fr))`;
+        const counts = Array(n + 1).fill(0);
+        for (let i = 0; i < boardCells(); i++) {
           const v = currentGame.board[i];
-          if (v >= 1 && v <= 9 && !isCellWrong(i)) {
+          if (v >= 1 && v <= n && !isCellWrong(i)) {
             counts[v]++;
           }
         }
 
-        for (let d = 1; d <= 9; d++) {
-          const remaining = Math.max(0, 9 - counts[d]);
+        for (let d = 1; d <= boardN(); d++) {
+          const remaining = Math.max(0, n - counts[d]);
           const isLocked = currentGame.inputStyle === 'digit-first' && currentGame.lockedDigit === d;
           const isComplete = remaining === 0 && !currentGame.isCustomEntry;
 
@@ -3848,8 +3907,9 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
       function openReview(profile, entry) {
         if (!entry || !entry.given || !entry.moves) return;
         const given = entry.given.split('').map(Number);
-        const sol = solveSudokuBoard(given, 1).solution;
-        review = { given, sol, moves: entry.moves, pos: 0, entry, profile };
+        const n = sizeOfLength(given.length);
+        const sol = n === 9 ? solveSudokuBoard(given, 1).solution : kidSolve(given, n, 1).solution;
+        review = { given, sol, n, moves: entry.moves, pos: 0, entry, profile };
         document.getElementById('reviewTitle').textContent = `${LEVEL_LABEL[entry.difficulty] || entry.difficulty} · ${entry.date}`;
         document.getElementById('reviewSubtitle').textContent = `${escapeHtml(profile.name)} · ${entry.result === 'lost' ? 'lost on the third mistake' : formatTime(finalOf(entry)) + ' including penalties'} · ${entry.moves.length} moves`;
         const slider = document.getElementById('reviewSlider');
@@ -3868,13 +3928,17 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         const board = reviewBoardAt(pos);
         const el = document.getElementById('reviewBoard');
         el.innerHTML = '';
+        const n = review.n, [bw, bh] = boxDims(n);
+        el.style.gridTemplateColumns = `repeat(${n}, minmax(0, 1fr))`;
+        el.style.gridTemplateRows = `repeat(${n}, minmax(0, 1fr))`;
+        el.style.setProperty('--cell', (360 / n).toFixed(1) + 'px');
         const mv = pos > 0 ? review.moves[pos - 1] : null;
-        for (let i = 0; i < 81; i++) {
-          const r = Math.floor(i / 9), c = i % 9;
+        for (let i = 0; i < n * n; i++) {
+          const [r, c] = cellRC(i, n);
           const cell = document.createElement('div');
-          const cls = ['sudoku-cell', `row-${r}`, `col-${c}`];
-          if (c === 2 || c === 5) cls.push('box-right');
-          if (r === 2 || r === 5) cls.push('box-bottom');
+          const cls = ['sudoku-cell'];
+          if (c === n - 1) cls.push('last-col'); else if ((c + 1) % bw === 0) cls.push('box-right');
+          if (r === n - 1) cls.push('last-row'); else if ((r + 1) % bh === 0) cls.push('box-bottom');
           if (mv && mv[0] === i) cls.push('state-review');
           cell.className = cls.join(' ');
           if (board[i]) {
@@ -3889,23 +3953,24 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         document.getElementById('reviewPos').textContent = `${pos} / ${review.moves.length}`;
         document.getElementById('reviewSlider').value = String(pos);
         const cap = document.getElementById('reviewCaption');
+        const rc = i => cellName(i, n);
         if (!mv) {
-          const step = findLogicalStep(board, computeAllCands(board));
-          cap.innerHTML = `<strong>Start.</strong> ${review.given.filter(v => v).length} clues. ${step ? `The first available step is a <strong>${step.title.replace(/^.*?: /, '')}</strong>${step.kind === 'place' ? ` at ${rcName(step.cell)}` : ''}.` : ''}`;
+          const step = n === 9 ? findLogicalStep(board, computeAllCands(board)) : null;
+          cap.innerHTML = `<strong>Start.</strong> ${review.given.filter(v => v).length} clues. ${step ? `The first available step is a <strong>${step.title.replace(/^.*?: /, '')}</strong>${step.kind === 'place' ? ` at ${rc(step.cell)}` : ''}.` : ''}`;
           return;
         }
         const [c, d, kind, t] = mv;
         const kindText = { p: 'placed', h: 'placed via hint', r: 'revealed by the coach', x: 'erased', u: 'undone to' }[kind] || 'changed';
         const before = reviewBoardAt(pos - 1);
-        const stepBefore = findLogicalStep(before, computeAllCands(before));
+        const stepBefore = n === 9 ? findLogicalStep(before, computeAllCands(before)) : null;
         let verdict = '';
         if (kind === 'p' || kind === 'h') {
           const correct = review.sol && d === review.sol[c];
           verdict = correct ? '<span class="text-emerald-700 font-semibold">Correct.</span>' : '<span class="text-rose-800 font-semibold">Wrong digit.</span>';
-          if (stepBefore && stepBefore.kind === 'place') verdict += stepBefore.cell === c ? ` This was the engine's step too (<strong>${stepBefore.title.replace(/^.*?: /, '')}</strong>).` : ` The engine would have gone to ${rcName(stepBefore.cell)} first (<strong>${stepBefore.title.replace(/^.*?: /, '')}</strong>).`;
+          if (stepBefore && stepBefore.kind === 'place') verdict += stepBefore.cell === c ? ` This was the engine's step too (<strong>${stepBefore.title.replace(/^.*?: /, '')}</strong>).` : ` The engine would have gone to ${rc(stepBefore.cell)} first (<strong>${stepBefore.title.replace(/^.*?: /, '')}</strong>).`;
           else if (stepBefore) verdict += ` The engine's next step here was a <strong>${stepBefore.title.replace(/^.*?: /, '')}</strong>.`;
         }
-        cap.innerHTML = `<strong>Move ${pos}</strong> at ${formatTime(t || 0)}: ${kindText} ${d || ''} ${kind === 'x' ? 'from' : 'at'} ${rcName(c)}. ${verdict}`;
+        cap.innerHTML = `<strong>Move ${pos}</strong> at ${formatTime(t || 0)}: ${kindText} ${d || ''} ${kind === 'x' ? 'from' : 'at'} ${rc(c)}. ${verdict}`;
       }
       function reviewGo(pos) { if (!review) return; review.pos = Math.max(0, Math.min(review.moves.length, pos)); renderReview(); }
 
@@ -3935,10 +4000,12 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         try {
           const params = new URLSearchParams(location.search);
           const b = params.get('board');
-          if (!b || !/^[0-9]{81}$/.test(b)) return null;
+          if (!b || !/^[0-9]+$/.test(b) || ![16, 36, 81].includes(b.length)) return null;
           const given = b.split('').map(Number);
-          if (given.filter(v => v).length < 17) return null;
-          const res = solveSudokuBoard(given, 2);
+          const n = sizeOfLength(given.length);
+          if (given.some(v => v > n)) return null;
+          if (given.filter(v => v).length < (n === 9 ? 17 : n === 6 ? 8 : 4)) return null;
+          const res = n === 9 ? solveSudokuBoard(given, 2) : kidSolve(given, n, 2);
           if (res.count !== 1) return null;
           const level = LEVELS.includes(params.get('level')) ? params.get('level') : 'medium';
           const from = (params.get('from') || '').slice(0, 16);
@@ -4028,7 +4095,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         const max = wide ? 640 : (window.innerWidth >= 768 ? 640 : 560);
         const size = Math.max(wide ? 200 : 240, Math.min(avail, colWidth, max));
         board.style.width = size + 'px';
-        board.style.setProperty('--cell', (size / 9).toFixed(2) + 'px');
+        board.style.setProperty('--cell', (size / boardN()).toFixed(2) + 'px');
         if (!wide) controls.style.maxWidth = Math.max(size, 320) + 'px';
       }
       window.addEventListener('resize', fitBoard);
@@ -4234,7 +4301,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
           if (!document.getElementById('welcomeModal').classList.contains('hidden')) return;
           if (currentGame.isPaused || currentGame.isWon || currentGame.isLost) return;
 
-          if (e.key >= '1' && e.key <= '9') {
+          if (e.key >= '1' && e.key <= String(boardN())) {
             const d = parseInt(e.key, 10);
             applyDigitToCell(currentGame.selectedIdx, d);
           } else if (e.key === 'Backspace' || e.key === 'Delete') {
@@ -4246,13 +4313,13 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
             if (!currentGame.trailActive) startTrailBookmark();
           } else if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
             e.preventDefault();
-            let r = Math.floor(currentGame.selectedIdx / 9);
-            let c = currentGame.selectedIdx % 9;
-            if (e.key === 'ArrowUp') r = (r + 8) % 9;
-            if (e.key === 'ArrowDown') r = (r + 1) % 9;
-            if (e.key === 'ArrowLeft') c = (c + 8) % 9;
-            if (e.key === 'ArrowRight') c = (c + 1) % 9;
-            currentGame.selectedIdx = r * 9 + c;
+            const n = boardN();
+            let [r, c] = cellRC(currentGame.selectedIdx);
+            if (e.key === 'ArrowUp') r = (r + n - 1) % n;
+            if (e.key === 'ArrowDown') r = (r + 1) % n;
+            if (e.key === 'ArrowLeft') c = (c + n - 1) % n;
+            if (e.key === 'ArrowRight') c = (c + 1) % n;
+            currentGame.selectedIdx = r * n + c;
             renderBoard();
             const focusCell = document.querySelectorAll('#sudokuBoard .sudoku-cell')[currentGame.selectedIdx];
             if (focusCell) focusCell.focus({ preventScroll: true });
