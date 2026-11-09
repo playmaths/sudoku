@@ -13,6 +13,8 @@ A single-file, ad-free classic Sudoku for a shared family iPad and everyone's ph
 - **Newspaper entry**: type in a puzzle from a paper or book; the app checks it is solvable and plays it like any other board. A grid with several valid answers is accepted too and judged on clashes only.
 - **Family profiles** with per-player history, daily streaks and a stats page, saved in the device's browser. A sync code copies everything to another device.
 - **Comfort settings**: large digits, optional auto error check (turn it off for a "Purist" solve, where nothing on screen gives a wrong digit away) and smart highlighting.
+- **Scoring that bites on the hard levels**: every hint adds time to the recorded result (15 s Easy, 30 s Medium, 60 s Hard, 90 s Master), a wrong digit with red marking on adds 15 s on Medium, 30 s on Hard and 60 s on Master, and a third wrong digit on Hard or Master ends the board, which is recorded as lost and can be retried from the same clues. Turning red marking off is Purist mode: no checks, no penalties, and a clean solve earns the crown.
+- **System, light and dark themes**, chosen under the tools button; System follows the device.
 - **Honest timer**: counts wall-clock time while the board is on screen, pauses when the app is in the background, and survives a reload.
 
 ## Files
