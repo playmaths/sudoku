@@ -687,7 +687,9 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         <p class="text-xs text-slate-500 -mt-2">Starting a new board replaces the one in progress for this player.</p>
         <div class="grid grid-cols-2 gap-2">
           <button type="button" data-diff="kid4" data-kid="1" class="diff-btn">Little 4×4<small>Numbers 1 to 4 · a few minutes</small></button>
-          <button type="button" data-diff="kid6" data-kid="1" class="diff-btn">Middle 6×6<small>Numbers 1 to 6 · boxes of six</small></button>
+          <button type="button" data-diff="kid6" data-kid="1" class="diff-btn">Middle 6×6<small>Numbers 1 to 6 · wide boxes</small></button>
+          <button type="button" data-diff="kid6t" data-kid="1" class="diff-btn">Middle 6×6 tall<small>Numbers 1 to 6 · tall boxes</small></button>
+          <button type="button" data-diff="kid8" data-kid="1" class="diff-btn">Bigger 8×8<small>Numbers 1 to 8 · boxes of eight</small></button>
           <button type="button" data-diff="kid9" data-kid="1" class="diff-btn">Big 9×9<small>The real thing, with lots of clues</small></button>
           <button type="button" data-diff="easy" data-adult="1" class="diff-btn">Easy<small>Singles only · 40 clues</small></button>
           <button type="button" data-diff="medium" data-adult="1" class="diff-btn">Medium<small>Singles · 32 clues</small></button>
@@ -2095,10 +2097,13 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         grandmaster: { mistake: 90, hint: 120, maxMistakes: 3 },
         kid4: { mistake: 0, hint: 0, maxMistakes: 0 },
         kid6: { mistake: 0, hint: 0, maxMistakes: 0 },
+        kid6t: { mistake: 0, hint: 0, maxMistakes: 0 },
+        kid8: { mistake: 0, hint: 0, maxMistakes: 0 },
         kid9: { mistake: 0, hint: 0, maxMistakes: 0 }
       };
-      const KID_LEVELS = ['kid4', 'kid6', 'kid9'];
-      const KID_SIZE = { kid4: 4, kid6: 6, kid9: 9 };
+      const KID_LEVELS = ['kid4', 'kid6', 'kid6t', 'kid8', 'kid9'];
+      const KID_SIZE = { kid4: 4, kid6: 6, kid6t: 6, kid8: 8, kid9: 9 };
+      const KID_BOX = { kid4: [2, 2], kid6: [3, 2], kid6t: [2, 3], kid8: [4, 2], kid9: [3, 3] };
       const isKidLevel = lv => KID_LEVELS.includes(lv);
       function isKidPlayer() { const pr = getActiveProfile(); return !!(pr && pr.kid); }
       function penaltyRules(difficulty) { return PENALTY[difficulty] || PENALTY.medium; }
@@ -2121,9 +2126,9 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
       // ==================== ACTIVE GAME STATE ====================
       // ==================== SMALL-GRID SOLVER ====================
       // Backtracking solver for any of the three sizes (the engine script's solver is 9×9 only)
-      function kidSolve(puzzle, n, limit = 2) {
+      function kidSolve(puzzle, n, limit = 2, box = null) {
         const b = puzzle.slice();
-        const [bw, bh] = boxDims(n);
+        const [bw, bh] = boxDims(n, box);
         const boxOfN = i => Math.floor(Math.floor(i / n) / bh) * (n / bw) + Math.floor((i % n) / bw);
         const rowM = Array(n).fill(0), colM = Array(n).fill(0), boxM = Array(n).fill(0);
         for (let i = 0; i < n * n; i++) if (b[i]) { const bit = 1 << b[i]; rowM[Math.floor(i / n)] |= bit; colM[i % n] |= bit; boxM[boxOfN(i)] |= bit; }
@@ -2155,8 +2160,8 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
       // ==================== KIDS' ENGINE ====================
       // Small boards: fill by backtracking, carve while the solution stays unique and the board
       // stays solvable with singles alone, which is all a child is asked to see.
-      function kidUnits(n) {
-        const [bw, bh] = boxDims(n);
+      function kidUnits(n, box = null) {
+        const [bw, bh] = boxDims(n, box);
         const units = [];
         for (let r = 0; r < n; r++) units.push({ name: `Row ${r + 1}`, kind: 'row', cells: Array.from({ length: n }, (_, c) => r * n + c) });
         for (let c = 0; c < n; c++) units.push({ name: `Column ${c + 1}`, kind: 'col', cells: Array.from({ length: n }, (_, r) => r * n + c) });
@@ -2168,15 +2173,15 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         }
         return units;
       }
-      function kidCands(board, n) {
-        const units = kidUnits(n);
+      function kidCands(board, n, box = null) {
+        const units = kidUnits(n, box);
         const seenBy = Array.from({ length: n * n }, () => new Set());
         units.forEach(u => u.cells.forEach(i => u.cells.forEach(j => { if (board[j]) seenBy[i].add(board[j]); })));
         return board.map((v, i) => v ? [] : Array.from({ length: n }, (_, k) => k + 1).filter(d => !seenBy[i].has(d)));
       }
       // Next single on a small board, with words a child can follow
-      function findKidStep(board, n) {
-        const cands = kidCands(board, n);
+      function findKidStep(board, n, box = null) {
+        const cands = kidCands(board, n, box);
         for (let i = 0; i < n * n; i++) {
           if (!board[i] && cands[i].length === 1) {
             return { kind: 'place', cell: i, digit: cands[i][0], cells: [i], technique: 'nakedSingle',
@@ -2184,7 +2189,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
               explain: `Only one number is missing there: every other number is already in that row, column or box. It must be ${cands[i][0]}.` };
           }
         }
-        for (const u of kidUnits(n)) {
+        for (const u of kidUnits(n, box)) {
           for (let d = 1; d <= n; d++) {
             const spots = u.cells.filter(i => !board[i] && cands[i].includes(d));
             if (spots.length === 1) {
@@ -2196,18 +2201,18 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         }
         return null;
       }
-      function kidSinglesSolvable(puzzle, n) {
+      function kidSinglesSolvable(puzzle, n, box = null) {
         const b = puzzle.slice();
         for (;;) {
-          const st = findKidStep(b, n);
+          const st = findKidStep(b, n, box);
           if (!st) break;
           b[st.cell] = st.digit;
         }
         return b.every(v => v);
       }
-      function kidGenerate(n, rng = Math.random) {
-        const [bw, bh] = boxDims(n);
-        const target = n === 4 ? 6 : 14;
+      function kidGenerate(n, rng = Math.random, box = null) {
+        const [bw, bh] = boxDims(n, box);
+        const target = n === 4 ? 6 : n === 6 ? 14 : 28;
         for (let attempt = 0; attempt < 40; attempt++) {
           const board = Array(n * n).fill(0);
           const boxOfN = i => Math.floor(Math.floor(i / n) / bh) * (n / bw) + Math.floor((i % n) / bw);
@@ -2222,27 +2227,32 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
             if (clues <= target) break;
             const backup = puzzle[idx];
             puzzle[idx] = 0;
-            if (kidSolve(puzzle, n, 2).count !== 1 || !kidSinglesSolvable(puzzle, n)) puzzle[idx] = backup; else clues--;
+            if (kidSolve(puzzle, n, 2, [bw, bh]).count !== 1 || !kidSinglesSolvable(puzzle, n, [bw, bh])) puzzle[idx] = backup; else clues--;
           }
-          if (clues <= target + 2) return { puzzle, solution, grade: { level: 1 } };
+          if (clues <= target + 3) return { puzzle, solution, box: [bw, bh], grade: { level: 1 } };
         }
-        // fallback: the last board carved as far as it would go
-        return kidGenerate(n, rng);
+        return kidGenerate(n, rng, box);
       }
 
       // ==================== GRID GEOMETRY ====================
       // 9×9 with 3×3 boxes for the grown-up levels; 4×4 (2×2) and 6×6 (3 wide × 2 tall) for kids
       function boardN() { return currentGame.size || 9; }
       function boardCells() { const n = boardN(); return n * n; }
-      function boxDims(n = boardN()) { return n === 9 ? [3, 3] : n === 6 ? [3, 2] : [2, 2]; } // [columns per box, rows per box]
+      function defaultBox(n) { return n === 9 ? [3, 3] : n === 8 ? [4, 2] : n === 6 ? [3, 2] : [2, 2]; } // [columns per box, rows per box]
+      function boxDims(n = boardN(), box = null) {
+        if (box) return box;
+        if (currentGame && n === (currentGame.size || 9) && currentGame.box) return currentGame.box;
+        return defaultBox(n);
+      }
       function cellRC(i, n = boardN()) { return [Math.floor(i / n), i % n]; }
-      function boxIndexOf(i, n = boardN()) { const [bw, bh] = boxDims(n); const [r, c] = cellRC(i, n); return Math.floor(r / bh) * (n / bw) + Math.floor(c / bw); }
+      function boxIndexOf(i, n = boardN(), box = null) { const [bw, bh] = boxDims(n, box); const [r, c] = cellRC(i, n); return Math.floor(r / bh) * (n / bw) + Math.floor(c / bw); }
       function cellName(i, n = boardN()) { const [r, c] = cellRC(i, n); return `Row ${r + 1}, Column ${c + 1}`; }
       function emptyNotes(cells = boardCells()) { return Array.from({ length: cells }, () => []); }
       function sizeOfLength(len) { return Math.round(Math.sqrt(len)); }
 
       let currentGame = {
         size: 9,
+        box: [3, 3],
         difficulty: 'hard',
         isDailyChallenge: false,
         isCustomEntry: false,
@@ -2289,6 +2299,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
           difficulty: currentGame.difficulty,
           isDailyChallenge: currentGame.isDailyChallenge,
           size: currentGame.size || 9,
+          box: currentGame.box || null,
           dailyDate: currentGame.dailyDate || null,
           sharedFrom: currentGame.sharedFrom || null,
           moves: currentGame.moves || [],
@@ -2338,8 +2349,8 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         return puzzleWorker || null;
       }
       function buildBoard(difficulty, seed) {
-        if (difficulty === 'kid4' || difficulty === 'kid6') {
-          return Promise.resolve().then(() => kidGenerate(KID_SIZE[difficulty], makeRng(seed)));
+        if (KID_SIZE[difficulty] && difficulty !== 'kid9') {
+          return Promise.resolve().then(() => kidGenerate(KID_SIZE[difficulty], makeRng(seed), KID_BOX[difficulty]));
         }
         if (difficulty === 'kid9') difficulty = 'kids9';
         const w = getPuzzleWorker();
@@ -2376,7 +2387,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         if (isDaily) {
           const today = localDateStr().replace(/-/g, '');
           const diffIndex = LEVELS.indexOf(difficulty);
-          seed = (parseInt(today, 10) || 20261108) * 8 + Math.max(0, diffIndex);
+          seed = (parseInt(today, 10) || 20261108) * 16 + Math.max(0, diffIndex);
         }
         const token = ++startToken;
         takeBoard(difficulty, seed).then(made => {
@@ -2393,6 +2404,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         const cells = puzzle.length;
         currentGame = {
           size: sizeOfLength(cells),
+          box: made.box || meta.box || KID_BOX[difficulty] || defaultBox(sizeOfLength(cells)),
           difficulty,
           isDailyChallenge: isDaily,
           dailyDate: isDaily ? localDateStr() : null,
@@ -2446,6 +2458,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
           const cells = sg.board.length;
           currentGame = {
             size: sizeOfLength(cells),
+            box: sg.box || KID_BOX[sg.difficulty] || defaultBox(sizeOfLength(cells)),
             difficulty: sg.difficulty || defaultDiff,
             isDailyChallenge: !!sg.isDailyChallenge,
             dailyDate: sg.dailyDate || null,
@@ -2724,7 +2737,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
       function celebrateUnits(idx) {
         const n = boardN();
         const done = [];
-        kidUnits(n).forEach(u => {
+        kidUnits(n, currentGame.box).forEach(u => {
           if (u.cells.includes(idx) && u.cells.every(i => currentGame.board[i] && currentGame.board[i] === currentGame.solution[i])) done.push(...u.cells);
         });
         if (!done.length) return;
@@ -2776,6 +2789,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
             daily: currentGame.isDailyChallenge ? (currentGame.dailyDate || localDateStr()) : null,
             shared: currentGame.sharedFrom || null,
             given: currentGame.given.join(''),
+            box: currentGame.box || null,
             moves: (currentGame.moves || []).slice(-400)
           });
           trimReplays(profile);
@@ -2866,6 +2880,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         if (!currentGame.isCustomEntry) {
           currentGame.isCustomEntry = true;
           currentGame.size = 9;
+          currentGame.box = [3, 3];
           currentGame.moves = [];
           currentGame.dailyDate = null;
           currentGame.sharedFrom = null;
@@ -2961,6 +2976,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
           daily: currentGame.isDailyChallenge ? (currentGame.dailyDate || todayStr) : null,
           shared: currentGame.sharedFrom || null,
           given: currentGame.given.join(''),
+          box: currentGame.box || null,
           moves: (currentGame.moves || []).slice(-400)
         });
         trimReplays(profile);
@@ -3103,7 +3119,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
 
       function handleKidHint(profile) {
         const n = boardN();
-        const step = findKidStep(currentGame.board, n);
+        const step = findKidStep(currentGame.board, n, currentGame.box);
         if (!step) {
           // every remaining square needs more than a single: show one safely
           const target = currentGame.board.findIndex(v => !v);
@@ -3783,9 +3799,9 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
       }
 
       // ==================== STATS & CHART RENDERING ====================
-      const LEVELS = ['kid4', 'kid6', 'kid9', 'easy', 'medium', 'hard', 'master', 'grandmaster'];
-      const LEVEL_LABEL = { kid4: 'Little 4×4', kid6: 'Middle 6×6', kid9: 'Big 9×9', easy: 'Easy', medium: 'Medium', hard: 'Hard', master: 'Master', grandmaster: 'Grandmaster', kids: 'Kids' };
-      const LEVEL_COLOR = { kid4: '#F472B6', kid6: '#FB923C', kid9: '#2DD4BF', easy: '#10B981', medium: '#2563EB', hard: '#D97706', master: '#7C3AED', grandmaster: '#DC2626' };
+      const LEVELS = ['kid4', 'kid6', 'kid6t', 'kid8', 'kid9', 'easy', 'medium', 'hard', 'master', 'grandmaster'];
+      const LEVEL_LABEL = { kid4: 'Little 4×4', kid6: 'Middle 6×6', kid6t: 'Middle 6×6 tall', kid8: 'Bigger 8×8', kid9: 'Big 9×9', easy: 'Easy', medium: 'Medium', hard: 'Hard', master: 'Master', grandmaster: 'Grandmaster', kids: 'Kids' };
+      const LEVEL_COLOR = { kid4: '#F472B6', kid6: '#FB923C', kid6t: '#F59E0B', kid8: '#A78BFA', kid9: '#2DD4BF', easy: '#10B981', medium: '#2563EB', hard: '#D97706', master: '#7C3AED', grandmaster: '#DC2626' };
       const HARD_PLUS = lv => lv === 'hard' || lv === 'master' || lv === 'grandmaster';
       const finalOf = h => typeof h.finalSeconds === 'number' ? h.finalSeconds : h.seconds;
       const avg = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
@@ -4110,7 +4126,8 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         { id: 'wing', icon: '✖️', name: 'Wing user', desc: 'Use an X-Wing, Swordfish or Y-Wing through the coach', test: pr => ((pr.techniques || {}).wings || 0) >= 1 },
         { id: 'noHints', icon: '🧠', name: 'Own head', desc: 'Ten boards in a row with no hints', test: (pr, w) => w.length >= 10 && w.slice(-10).every(h => !(h.hints > 0)) },
         { id: 'kid4', icon: '🧒', name: 'Little grid', desc: 'Finish a 4×4 board', test: (pr, w) => w.some(h => h.difficulty === 'kid4') },
-        { id: 'kid6', icon: '🧩', name: 'Middle grid', desc: 'Finish a 6×6 board', test: (pr, w) => w.some(h => h.difficulty === 'kid6') },
+        { id: 'kid6', icon: '🧩', name: 'Middle grid', desc: 'Finish a 6×6 board', test: (pr, w) => w.some(h => h.difficulty === 'kid6' || h.difficulty === 'kid6t') },
+        { id: 'kid8', icon: '🎯', name: 'Bigger grid', desc: 'Finish an 8×8 board', test: (pr, w) => w.some(h => h.difficulty === 'kid8') },
         { id: 'kid9', icon: '🏆', name: 'Big grid', desc: 'Finish a Big 9×9 board', test: (pr, w) => w.some(h => h.difficulty === 'kid9') },
         { id: 'sheet', icon: '⭐', name: 'Sticker sheet', desc: 'Ten kids\' boards finished', test: (pr, w) => w.filter(h => isKidLevel(h.difficulty)).length >= 10 }
       ];
@@ -4148,8 +4165,9 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         if (!entry || !entry.given || !entry.moves) return;
         const given = entry.given.split('').map(Number);
         const n = sizeOfLength(given.length);
-        const sol = n === 9 ? solveSudokuBoard(given, 1).solution : kidSolve(given, n, 1).solution;
-        review = { given, sol, n, moves: entry.moves, pos: 0, entry, profile };
+        const box = entry.box || KID_BOX[entry.difficulty] || defaultBox(n);
+        const sol = n === 9 ? solveSudokuBoard(given, 1).solution : kidSolve(given, n, 1, box).solution;
+        review = { given, sol, n, box, moves: entry.moves, pos: 0, entry, profile };
         document.getElementById('reviewTitle').textContent = `${LEVEL_LABEL[entry.difficulty] || entry.difficulty} · ${entry.date}`;
         document.getElementById('reviewSubtitle').textContent = `${escapeHtml(profile.name)} · ${entry.result === 'lost' ? 'lost on the third mistake' : formatTime(finalOf(entry)) + ' including penalties'} · ${entry.moves.length} moves`;
         const slider = document.getElementById('reviewSlider');
@@ -4168,7 +4186,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         const board = reviewBoardAt(pos);
         const el = document.getElementById('reviewBoard');
         el.innerHTML = '';
-        const n = review.n, [bw, bh] = boxDims(n);
+        const n = review.n, [bw, bh] = boxDims(n, review.box);
         el.style.gridTemplateColumns = `repeat(${n}, minmax(0, 1fr))`;
         el.style.gridTemplateRows = `repeat(${n}, minmax(0, 1fr))`;
         el.style.setProperty('--cell', (360 / n).toFixed(1) + 'px');
@@ -4219,6 +4237,8 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         const base = location.origin && location.origin !== 'null' ? location.origin + location.pathname : location.href.split('?')[0];
         const me = getActiveProfile();
         const params = new URLSearchParams({ board: currentGame.given.join(''), level: currentGame.difficulty });
+        const def = defaultBox(boardN());
+        if (currentGame.box && (currentGame.box[0] !== def[0] || currentGame.box[1] !== def[1])) params.set('box', `${currentGame.box[0]}x${currentGame.box[1]}`);
         if (me) params.set('from', me.name);
         return `${base}?${params.toString()}`;
       }
@@ -4240,24 +4260,27 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         try {
           const params = new URLSearchParams(location.search);
           const b = params.get('board');
-          if (!b || !/^[0-9]+$/.test(b) || ![16, 36, 81].includes(b.length)) return null;
+          if (!b || !/^[0-9]+$/.test(b) || ![16, 36, 64, 81].includes(b.length)) return null;
           const given = b.split('').map(Number);
           const n = sizeOfLength(given.length);
           if (given.some(v => v > n)) return null;
-          if (given.filter(v => v).length < (n === 9 ? 17 : n === 6 ? 8 : 4)) return null;
-          const res = n === 9 ? solveSudokuBoard(given, 2) : kidSolve(given, n, 2);
+          if (given.filter(v => v).length < (n === 9 ? 17 : n === 8 ? 16 : n === 6 ? 8 : 4)) return null;
+          let box = defaultBox(n);
+          const bm = /^(\d)x(\d)$/.exec(params.get('box') || '');
+          if (bm && (+bm[1]) * (+bm[2]) === n) box = [+bm[1], +bm[2]];
+          const res = n === 9 ? solveSudokuBoard(given, 2) : kidSolve(given, n, 2, box);
           if (res.count !== 1) return null;
           const level = LEVELS.includes(params.get('level')) ? params.get('level') : 'medium';
           const from = (params.get('from') || '').slice(0, 16);
           history.replaceState(null, '', location.pathname);
-          return { puzzle: given, solution: res.solution, level, from };
+          return { puzzle: given, solution: res.solution, level, from, box };
         } catch (e) { return null; }
       }
       function startSharedBoardIfAny() {
         if (!pendingSharedBoard || !getActiveProfile()) return false;
         const sb = pendingSharedBoard; pendingSharedBoard = null;
         startToken++;
-        startNewPuzzleNow(sb.level, false, { puzzle: sb.puzzle, solution: sb.solution }, { sharedFrom: sb.from || 'a link' });
+        startNewPuzzleNow(sb.level, false, { puzzle: sb.puzzle, solution: sb.solution, box: sb.box }, { sharedFrom: sb.from || 'a link' });
         showHintBanner('🔗 Shared board', `${sb.from ? sb.from + ' sent' : 'Someone sent'} you this ${sb.level} board. Same clues, your time.`);
         return true;
       }
