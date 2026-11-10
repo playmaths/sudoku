@@ -1943,9 +1943,38 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
       // Merge the family's players into this device: unknown players are added, known
       // players take whichever copy is newer. On a first join, empty local players whose
       // name matches a family player are dropped so nobody appears twice.
+      // Merge two copies of one player field by field, so the same person on two devices never
+      // loses a game: histories are combined, the in-progress board goes to the copy that touched
+      // it last, counters take the larger value, flags the newer copy.
+      function gameKey(h) { return [h.date, h.difficulty, h.seconds, h.finalSeconds, h.mistakes, h.result || 'won', h.daily || '', h.given || ''].join('|'); }
+      function mergePlayer(local, remote) {
+        const newer = (remote.updatedAt || 0) >= (local.updatedAt || 0) ? remote : local;
+        const older = newer === remote ? local : remote;
+        const out = Object.assign({}, older, newer);
+        // history: union, in date order, keeping each game once
+        const seen = new Set();
+        out.history = [...(local.history || []), ...(remote.history || [])]
+          .filter(h => h && !seen.has(gameKey(h)) && seen.add(gameKey(h)))
+          .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+        // the board being played: whichever was saved last
+        const lg = local.savedGame, rg = remote.savedGame;
+        out.savedGame = !lg ? rg : !rg ? lg : ((rg.updatedAt || 0) > (lg.updatedAt || 0) ? rg : lg);
+        // technique counters and streak records: never go down
+        const t = {}; ['nakedSingles', 'hiddenSingles', 'pairs', 'pointing', 'wings', 'reveals'].forEach(k => { t[k] = Math.max((local.techniques || {})[k] || 0, (remote.techniques || {})[k] || 0); });
+        out.techniques = t;
+        out.bestStreak = Math.max(local.bestStreak || 0, remote.bestStreak || 0);
+        const lw = local.lastWinDate || '', rw = remote.lastWinDate || '';
+        if (lw !== rw) { const src = lw > rw ? local : remote; out.lastWinDate = src.lastWinDate; out.streak = src.streak; }
+        out.achievementsSeen = [...new Set([...(local.achievementsSeen || []), ...(remote.achievementsSeen || [])])];
+        out.removed = !!(local.removed || remote.removed) && (newer.removed !== false || older.removed !== false) ? !!newer.removed || (!!older.removed && !newer.hasOwnProperty('removed')) : false;
+        out.updatedAt = Math.max(local.updatedAt || 0, remote.updatedAt || 0);
+        return out;
+      }
+      function sameBoard(a, b) { return !!a && !!b && Array.isArray(a.board) && Array.isArray(b.board) && a.board.join('') === b.board.join('') && (a.difficulty === b.difficulty); }
+
       function mergeFamilyProfiles(remoteProfiles, firstJoin) {
         if (!Array.isArray(remoteProfiles)) return;
-        let changed = false, localNewer = false, activeReplaced = false;
+        let changed = false, localNewer = false, activeBoardChanged = false;
         if (firstJoin) {
           const names = new Set(remoteProfiles.map(r => String(r.name || '').trim().toLowerCase()));
           const before = appState.profiles.length;
@@ -1957,13 +1986,14 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
           const idx = appState.profiles.findIndex(pr => pr.id === remote.id);
           if (idx === -1) { appState.profiles.push(remote); changed = true; return; }
           const local = appState.profiles[idx];
-          if ((remote.updatedAt || 0) > (local.updatedAt || 0)) {
-            appState.profiles[idx] = remote;
+          const merged = mergePlayer(local, remote);
+          const localJson = JSON.stringify(local), mergedJson = JSON.stringify(merged), remoteJson = JSON.stringify(remote);
+          if (mergedJson !== localJson) {
+            if (local.id === appState.activeProfileId && !sameBoard(local.savedGame, merged.savedGame)) activeBoardChanged = true;
+            appState.profiles[idx] = merged;
             changed = true;
-            if (remote.id === appState.activeProfileId) activeReplaced = true;
-          } else if ((local.updatedAt || 0) > (remote.updatedAt || 0)) {
-            localNewer = true;
           }
+          if (mergedJson !== remoteJson) localNewer = true;
         });
         appState.profiles.forEach(pr => { if (!remoteProfiles.some(r => r && r.id === pr.id)) localNewer = true; });
         if (changed) {
@@ -1971,7 +2001,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
           const live = livePlayers();
           if (!live.some(pr => pr.id === appState.activeProfileId)) appState.activeProfileId = live.length ? live[0].id : null;
           persistState();
-          if (activeReplaced || !getActiveProfile() || !currentGame.board.some(v => v !== 0)) loadOrStartProfileGame();
+          if (activeBoardChanged || !getActiveProfile() || !currentGame.board.some(v => v !== 0)) loadOrStartProfileGame();
           renderAll();
           if (!document.getElementById('viewStats').classList.contains('hidden')) renderStatsView();
           if (!document.getElementById('viewSync').classList.contains('hidden')) renderPlayerEditList();
@@ -2086,11 +2116,12 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         loadDiag.family = appState.family || null;
       }
 
-      function saveState() {
-        saveCurrentGameToProfile();
+      function saveState(touch = true) {
         const now = Date.now();
+        if (touch) currentGame.lastTouch = now;
+        saveCurrentGameToProfile();
         const profile = getActiveProfile();
-        if (profile) profile.updatedAt = now;
+        if (profile && touch) profile.updatedAt = now;
         appState.savedAt = now;
         persistState();
         scheduleFamPush();
@@ -2357,6 +2388,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         const profile = getActiveProfile();
         if (!profile || currentGame.isCustomEntry) return;
         profile.savedGame = JSON.parse(JSON.stringify({
+          updatedAt: currentGame.lastTouch || (profile.savedGame && profile.savedGame.updatedAt) || Date.now(),
           difficulty: currentGame.difficulty,
           isDailyChallenge: currentGame.isDailyChallenge,
           size: currentGame.size || 9,
@@ -2526,6 +2558,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
             box: sg.box || KID_BOX[sg.difficulty] || defaultBox(sizeOfLength(cells)),
             difficulty: sg.difficulty || defaultDiff,
             isDailyChallenge: !!sg.isDailyChallenge,
+            lastTouch: sg.updatedAt || 0,
             dailyDate: sg.dailyDate || null,
             sharedFrom: sg.sharedFrom || null,
             moves: sg.moves || [],
@@ -2592,7 +2625,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
             }
             if (now - lastAutosave > 20000) {
               lastAutosave = now;
-              saveState();
+              saveState(false); // timer only: not a touch, so it never outranks a move made elsewhere
             }
           }
           timerLastTick = now;
@@ -2601,9 +2634,9 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
 
       document.addEventListener('visibilitychange', () => {
         timerLastTick = Date.now();
-        if (document.hidden && livePlayers().length) saveState();
+        if (document.hidden && livePlayers().length) saveState(false);
       });
-      window.addEventListener('pagehide', () => { if (livePlayers().length) saveState(); });
+      window.addEventListener('pagehide', () => { if (livePlayers().length) saveState(false); });
 
       function formatTime(totalSec) {
         const m = Math.floor(totalSec / 60);
