@@ -3047,11 +3047,24 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
           currentGame.noteSlips = [];
           currentGame.undoStack = [];
           document.getElementById('newspaperBtnLabel').textContent = 'Enter Paper Puzzle';
+          // Grade the typed-in board on our ladder so it can be compared with other apps' labels
+          let verdict = '';
+          if (res.count === 1) {
+            const g = gradePuzzle(currentGame.given);
+            const ours = !g.solved ? 'Extreme (beyond the coach)'
+              : g.level >= 5 ? 'Grandmaster (chains)'
+              : g.level === 4 ? 'Master (wings)'
+              : g.level === 3 ? 'Hard (pairs, triples, pointing)'
+              : clueCount <= 30 ? 'Tricky (singles, sparse)'
+              : clueCount <= 36 ? 'Medium (singles)' : 'Easy (singles)';
+            const steps = g.solved ? `${g.hardSteps || 0} technique step${(g.hardSteps || 0) === 1 ? '' : 's'}, ${(g.levelCounts && g.levelCounts[2]) || 0} hidden singles` : 'the coach gets stuck before the end';
+            verdict = ` On our ladder this is ${ours}: ${clueCount} clues, ${steps}.`;
+          }
           showHintBanner(
             res.count === 1 ? 'Paper Puzzle Verified!' : 'Paper Puzzle Loaded',
-            res.count === 1
-              ? 'Unique solution confirmed! Your timer has started—enjoy solving with full pencil notes and bookmarks.'
-              : 'Puzzle loaded. This grid has more than one valid answer, so the app checks for clashes only and accepts any complete, conflict-free board.'
+            (res.count === 1
+              ? 'Unique solution confirmed. Your timer has started.'
+              : 'Puzzle loaded. This grid has more than one valid answer, so the app checks for clashes only and accepts any complete, conflict-free board.') + verdict
           );
           startTimer();
           saveState();
