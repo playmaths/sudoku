@@ -764,6 +764,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
           </div>
         </div>
 
+        <p id="buildStamp" class="text-[11px] text-slate-400 font-mono -mb-2"></p>
         <div id="comfortDrawer" class="flex flex-col gap-2.5">
           <div class="text-xs font-bold uppercase tracking-wider text-slate-500">Comfort &amp; checking</div>
           <label class="flex items-center justify-between gap-3 text-sm text-slate-800 bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2.5">
@@ -1769,6 +1770,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
       'use strict';
 
       const STORAGE_KEY = 'family_sudoku_v4';
+      const APP_BUILD = '2026-11-10 · build 31';
 
       // Synthesized gentle audio feedback via Web Audio API
       let audioCtx = null;
@@ -4650,7 +4652,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
         const openSheet = id => { document.getElementById(id).classList.remove('hidden'); };
         const closeSheet = id => { document.getElementById(id).classList.add('hidden'); };
         document.getElementById('gameMenuBtn').addEventListener('click', () => { renderStatusHeader(); openSheet('gameMenuSheet'); });
-        document.getElementById('moreToolsBtn').addEventListener('click', () => { renderSniperBar(); openSheet('toolsSheet'); });
+        document.getElementById('moreToolsBtn').addEventListener('click', () => { renderSniperBar(); document.getElementById('buildStamp').textContent = `Family Sudoku · ${APP_BUILD}`; openSheet('toolsSheet'); });
         document.querySelectorAll('[data-close-sheet]').forEach(el => el.addEventListener('click', () => closeSheet(el.getAttribute('data-close-sheet'))));
         // any action chosen in the game menu closes it
         document.getElementById('gameMenuSheet').addEventListener('click', e => { if (e.target.closest('button') && !e.target.closest('[data-close-sheet]')) closeSheet('gameMenuSheet'); });
