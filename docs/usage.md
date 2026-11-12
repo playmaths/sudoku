@@ -26,7 +26,35 @@ match /usage/{day} {
 }
 ```
 
+Problem reports go to `reports/{id}`. Add this rule as well:
+
+```
+match /reports/{id} {
+  allow read: if true;
+  allow create: if request.resource.data.keys().hasOnly(['at', 'build', 'text', 'context', 'errors'])
+    && request.resource.data.text is string && request.resource.data.text.size() <= 1500
+    && request.resource.data.context is string && request.resource.data.context.size() <= 6000
+    && request.resource.data.errors is string && request.resource.data.errors.size() <= 2500;
+  allow update, delete: if false;
+}
+```
+
+## If a command prints `jq: parse error`
+
+The body was not JSON, so look at it raw first:
+
+```bash
+curl -s -X POST \
+  'https://firestore.googleapis.com/v1/projects/playmaths-6a181/databases/(default)/documents:runQuery?key=AIzaSyCgG83-cqWqDuzOWrIQwqLBMF7sTwOkbWA' \
+  -H 'Content-Type: application/json' \
+  -d '{"structuredQuery":{"from":[{"collectionId":"usage"}],"limit":3}}' | head -c 600; echo
+```
+
+A JSON array starting `[{"document"` means data; `[{"readTime"` alone means the collection is empty so far; `{"error"` with PERMISSION_DENIED means the usage rule is not published yet. Anything else (HTML, a line of text) is a network or shell problem: paste the URL in single quotes exactly as above, because the `(default)` and `?key=` parts break without the quotes.
+
 ## Reading the counts
+
+**Problem reports** sent from the app (menu → Report a problem) appear on the same Usage page with an Open this board link, and in the console under `reports`.
 
 **In the app**: open Tools & settings from the menu and tap the build stamp five times. A Usage row appears in the menu with tiles, a 30-day chart and a per-day table. Five more taps hide it again.
 
