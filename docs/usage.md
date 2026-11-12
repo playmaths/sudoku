@@ -52,6 +52,20 @@ curl -s -X POST \
 
 A JSON array starting `[{"document"` means data; `[{"readTime"` alone means the collection is empty so far; `{"error"` with PERMISSION_DENIED means the usage rule is not published yet. Anything else (HTML, a line of text) is a network or shell problem: paste the URL in single quotes exactly as above, because the `(default)` and `?key=` parts break without the quotes.
 
+Number Garden writes the same shape to `gardenUsage/{day}` (starts are trails, wins are flowers, the level keys are doors). Add this rule too:
+
+```
+match /gardenUsage/{day} {
+  allow read: if true;
+  allow create, update: if day.matches('^20[0-9]{2}-[0-9]{2}-[0-9]{2}$')
+    && request.resource.data.keys().hasOnly(['day', 'devices', 'opens', 'starts', 'wins', 'startsByLevel', 'winsByLevel', 'families'])
+    && (!('families' in request.resource.data) || request.resource.data.families.size() <= 2000);
+  allow delete: if false;
+}
+```
+
+The Sudoku Usage page shows both apps; Number Garden's grown-ups screen shows its own.
+
 ## Reading the counts
 
 **Problem reports** sent from the app (menu → Report a problem) appear on the same Usage page with an Open this board link, and in the console under `reports`.
