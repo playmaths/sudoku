@@ -1964,7 +1964,7 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
       'use strict';
 
       const STORAGE_KEY = 'family_sudoku_v4';
-      const APP_BUILD = '2026-11-12 · build 38';
+      const APP_BUILD = '2026-11-12 · build 39';
 
       // Synthesized gentle audio feedback via Web Audio API
       let audioCtx = null;
@@ -2418,7 +2418,6 @@ html.theme-dark .text-slate-900 { color: #f8fafc !important; }
           const resp = await fetch(`https://firestore.googleapis.com/v1/projects/${FIREBASE.projectId}/databases/(default)/documents/reports?key=${FIREBASE.apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields }) });
           if (!resp.ok) throw new Error('HTTP ' + resp.status);
           state.textContent = 'Sent. Thank you. The board and details went with it.';
-          usageCount('reports');
         } catch (e) {
           document.getElementById('reportSendBtn').disabled = false;
           state.textContent = `Could not send (${e.message}). Tap Copy and paste it into a message instead.`;
